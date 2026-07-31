@@ -332,3 +332,25 @@ Existing WireGuard sites can now change `tunnelProfile` + `routingMode` under
 
 - `npx tsc --noEmit` → exit 0
 - `tunnelProfiles.test.ts` → pass
+
+## App-plus lap 4 (2026-07-31) — response headers + test runner
+
+### Features
+
+| Item | Source | Notes |
+|------|--------|-------|
+| Custom response headers | OPEN PR **#3172** | `resources.requestHeaders` + `responseHeaders`; Traefik customRequest/ResponseHeaders; UI on public HTTP resource settings |
+| Migration 1.21.3 | plus | Rename `headers`→`requestHeaders`, add `responseHeaders` (sqlite+pg) |
+| Test runner + CI | OPEN PR **#3368** | `npm test` via `test/run.ts`; workflow already present, wired script |
+
+### Verify
+
+- `npx tsc --noEmit` → exit 0
+- `npm test` → **9/11** pass (config present). Failures:
+  - `server/lib/ip.test.ts` / `traefikConfig.test.ts` — pre-existing `.openapi is not a function` when zod-openapi extension not loaded in isolated process (not introduced by this lap)
+
+### Still open (high interest, not this lap)
+
+- #3448 sqlite index parity (large conflict)
+- #3334 integration API 404 — ops note in `deploy/TROUBLESHOOTING.md`
+- Client/RDP/IPv6 issues — need investigating / client surface

@@ -64,7 +64,8 @@ export async function getTraefikConfig(
             tlsServerName: resources.tlsServerName,
             setHostHeader: resources.setHostHeader,
             enableProxy: resources.enableProxy,
-            headers: resources.headers,
+            requestHeaders: resources.requestHeaders,
+            responseHeaders: resources.responseHeaders,
             proxyProtocol: resources.proxyProtocol,
             proxyProtocolVersion: resources.proxyProtocolVersion,
             mode: resources.mode,
@@ -176,7 +177,8 @@ export async function getTraefikConfig(
                 setHostHeader: row.setHostHeader,
                 enableProxy: row.enableProxy,
                 targets: [],
-                headers: row.headers,
+                requestHeaders: row.requestHeaders,
+                responseHeaders: row.responseHeaders,
                 proxyProtocol: row.proxyProtocol,
                 proxyProtocolVersion: row.proxyProtocolVersion ?? 1,
                 path: row.path, // the targets will all have the same path
@@ -363,38 +365,59 @@ export async function getTraefikConfig(
             }
 
             // Handle custom headers middleware
-            if (resource.headers || resource.setHostHeader) {
-                const headersObj: { [key: string]: string } = {};
+            if (resource.requestHeaders || resource.responseHeaders || resource.setHostHeader) {
+                const requestHeadersObj: { [key: string]: string } = {};
+                const responseHeadersObj: { [key: string]: string } = {};
 
-                if (resource.headers) {
-                    let headersArr: { name: string; value: string }[] = [];
+                if (resource.requestHeaders) {
+                    let requestHeadersArr: { name: string; value: string }[] = [];
                     try {
-                        headersArr = JSON.parse(resource.headers) as {
+                        requestHeadersArr = JSON.parse(resource.requestHeaders) as {
                             name: string;
                             value: string;
                         }[];
                     } catch (e) {
                         logger.warn(
-                            `Failed to parse headers for resource ${resource.resourceId}: ${e}`
+                            `Failed to parse requestHeaders for resource ${resource.resourceId}: ${e}`
                         );
                     }
-
-                    headersArr.forEach((header) => {
-                        headersObj[header.name] = header.value;
+                    requestHeadersArr.forEach((header) => {
+                        requestHeadersObj[header.name] = header.value;
                     });
                 }
 
                 if (resource.setHostHeader) {
-                    headersObj["Host"] = resource.setHostHeader;
+                    requestHeadersObj["Host"] = resource.setHostHeader;
                 }
 
-                if (Object.keys(headersObj).length > 0) {
+                if (resource.responseHeaders) {
+                    let responseHeadersArr: { name: string; value: string }[] = [];
+                    try {
+                        responseHeadersArr = JSON.parse(resource.responseHeaders) as {
+                            name: string;
+                            value: string;
+                        }[];
+                    } catch (e) {
+                        logger.warn(
+                            `Failed to parse responseHeaders for resource ${resource.resourceId}: ${e}`
+                        );
+                    }
+                    responseHeadersArr.forEach((header) => {
+                        responseHeadersObj[header.name] = header.value;
+                    });
+                }
+
+                const hasRequestHeaders = Object.keys(requestHeadersObj).length > 0;
+                const hasResponseHeaders = Object.keys(responseHeadersObj).length > 0;
+
+                if (hasRequestHeaders || hasResponseHeaders) {
                     if (!config_output.http.middlewares) {
                         config_output.http.middlewares = {};
                     }
                     config_output.http.middlewares[headersMiddlewareName] = {
                         headers: {
-                            customRequestHeaders: headersObj
+                            ...(hasRequestHeaders && { customRequestHeaders: requestHeadersObj }),
+                            ...(hasResponseHeaders && { customResponseHeaders: responseHeadersObj })
                         }
                     };
 
