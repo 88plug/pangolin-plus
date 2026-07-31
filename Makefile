@@ -521,3 +521,18 @@ test:
 
 clean:
 	docker rmi pangolin
+
+# --- pangolin-plus monorepo components ---
+.PHONY: components-test components-build newt-test newt-build
+
+newt-test:
+	$(MAKE) -C components/newt test
+
+newt-build:
+	$(MAKE) -C components/newt local
+
+components-test: newt-test
+	@echo "gerbil/olm/badger: baseline only (mine next); newt tests done"
+
+components-build: newt-build
+	@echo "Built components/newt → components/newt/bin/newt"

@@ -1,0 +1,12 @@
+displayName: Pangolin (Badger)
+type: middleware
+iconPath: .assets/icon.png
+
+import: github.com/fosrl/badger
+
+summary: Middleware auth bouncer for Pangolin
+
+testData:
+    apiBaseUrl: "http://localhost:3001/api/v1"
+    userSessionCookieName: "p_session_token"
+    resourceSessionRequestParam: "p_session_request"

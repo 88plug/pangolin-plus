@@ -1,0 +1,90 @@
+# pangolin-plus full stack — builds server + ecosystem components from this monorepo.
+# Usage:
+#   docker compose -f compose.plus.yaml build
+#   docker compose -f compose.plus.yaml up -d
+#
+# Newt still runs on each *site* host (not always on the controller). Gerbil +
+# pangolin + traefik are the control-plane edge. Olm is the end-user client binary
+# (not a compose service here).
+
+name: pangolin-plus
+
+services:
+  pangolin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILD: oss
+        DATABASE: sqlite
+    image: pangolin-plus/pangolin:local
+    container_name: pangolin
+    restart: unless-stopped
+    volumes:
+      - ./config:/app/config
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/v1/"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  gerbil:
+    build:
+      context: ./components/gerbil
+      dockerfile: Dockerfile
+    image: pangolin-plus/gerbil:local
+    container_name: gerbil
+    restart: unless-stopped
+    depends_on:
+      pangolin:
+        condition: service_healthy
+    command:
+      - --reachableAt=http://gerbil:3004
+      - --generateAndSaveKeyTo=/var/config/key
+      - --remoteConfig=http://pangolin:3001/api/v1/
+    volumes:
+      - ./config/:/var/config
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    ports:
+      - 51820:51820/udp
+      - 21820:21820/udp
+      - 443:443
+      - 80:80
+
+  traefik:
+    image: traefik:v3.7
+    container_name: traefik
+    restart: unless-stopped
+    network_mode: service:gerbil
+    depends_on:
+      pangolin:
+        condition: service_healthy
+    command:
+      - --configFile=/etc/traefik/traefik_config.yml
+    volumes:
+      - ./config/traefik:/etc/traefik:ro
+      - ./config/letsencrypt:/letsencrypt
+
+  # Optional: run a local Newt against this controller (site connector).
+  # Uncomment and set NEWT_ID / NEWT_SECRET for a lab site.
+  # newt:
+  #   build:
+  #     context: ./components/newt
+  #     dockerfile: Dockerfile
+  #   image: pangolin-plus/newt:local
+  #   environment:
+  #     PANGOLIN_ENDPOINT: http://pangolin:3001
+  #     NEWT_ID: ${NEWT_ID}
+  #     NEWT_SECRET: ${NEWT_SECRET}
+  #     NEWT_PREFER_LOCAL_ROUTES: "true"
+  #   cap_add:
+  #     - NET_ADMIN
+  #   network_mode: host
+
+networks:
+  default:
+    driver: bridge
+    name: pangolin-plus
+    enable_ipv6: true

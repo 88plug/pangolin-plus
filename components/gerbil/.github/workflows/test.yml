@@ -1,0 +1,35 @@
+name: Run Tests
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    branches:
+      - main
+      - dev
+
+jobs:
+  test:
+    runs-on: amd64-runner
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Read go version
+        id: goversion
+        run: echo "version=$(cat .go-version)" >> $GITHUB_OUTPUT
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ steps.goversion.outputs.version }}
+
+      - name: Build go
+        run: go build
+
+      - name: Build Docker image
+        run: make build
+
+      - name: Build binaries
+        run: make go-build-release

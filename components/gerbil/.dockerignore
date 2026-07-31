@@ -1,0 +1,10 @@
+.gitignore
+.dockerignore
+gerbil
+*.json
+README.md
+Makefile
+public/
+LICENSE
+CONTRIBUTING.md
+.git
