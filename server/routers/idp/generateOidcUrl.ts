@@ -16,6 +16,8 @@ import { decrypt } from "@server/lib/crypto";
 import { build } from "@server/build";
 import { isSubscribed } from "#dynamic/lib/isSubscribed";
 import { tierMatrix } from "@server/lib/billing/tierMatrix";
+import { isSafePostAuthRedirect } from "@server/lib/idp/isSafePostAuthRedirect";
+
 
 const paramsSchema = z
     .object({
@@ -68,6 +70,16 @@ export async function generateOidcUrl(
         }
 
         const { redirectUrl: postAuthRedirectUrl } = parsedBody.data;
+
+        // #3335: reject open redirects before storing in OIDC state JWT
+        if (!isSafePostAuthRedirect(postAuthRedirectUrl)) {
+            return next(
+                createHttpError(
+                    HttpCode.BAD_REQUEST,
+                    "Invalid redirectUrl: must be a relative path or a host under the configured dashboard/base domain"
+                )
+            );
+        }
 
         const parsedQuery = querySchema.safeParse(req.query);
         if (!parsedQuery.success) {
@@ -172,7 +184,7 @@ export async function generateOidcUrl(
 
         const stateJwt = jsonwebtoken.sign(
             {
-                redirectUrl: postAuthRedirectUrl, // TODO: validate that this is safe
+                redirectUrl: postAuthRedirectUrl,
                 state,
                 codeVerifier
             },

@@ -106,3 +106,56 @@ ansible-playbook -i inventory.ini pangolin.yml
 2. Re-design “enhanced tunnel types” against 1.21 site/client models  
 3. Finish ODoH-for-WG clients as optional Ansible role under `deploy/`  
 4. Optionally publish branch / GH repo under 88plug without any secrets from racknerd
+
+## App-plus pass (2026-07-31)
+
+Full `/app-plus` pipeline on base 1.21.1 + prior PEM/deploy work.
+
+### Plus thesis
+
+Pangolin OSS is the self-host identity-aware edge (proxy + WireGuard + Badger). Plus completes correctness and self-host gaps maintainers left open: session cookie handling, audit truth, geoblock multi-country, integration API, BYOC certs, OIDC redirect safety.
+
+### Bugs fixed
+
+| Item | Source | Notes |
+|------|--------|-------|
+| stripDuplicateSessions not deduping | OPEN PR #3445 | session cookie explosion / #2238 class |
+| Request audit log row mix-up | OPEN PR #3459 / issue #3458 | ordering + UI |
+| Audit log filter-attribute 6→1 scans | OPEN PR #3443 | applied after #3459 |
+| Integration API site-resource lookup | OPEN PR #3510 / issue #2743 | + test |
+| COUNTRY_IS_NOT multi-country | OPEN PR #3474 / issue #3432 | policy eval + UI |
+| Blueprint certificates.domain UNIQUE | OPEN PR #3199 / issue #2937 | upsert path (EE createCertificate) |
+| getTraefikConfig hot-path | OPEN PR #3191 | anySitesOnline out of loop |
+| Regional locale detection | OPEN PR #3509 / issue #3480 | detectLocale helper |
+| SSO redirect after expired session | CLOSED PR #3411 / issue #3001 | resource auth portal |
+| Badger Remote-Groups header | CLOSED PR #3278 | downstream RBAC |
+| OIDC post-auth open redirect | OPEN issue #3335 | `isSafePostAuthRedirect` |
+
+### Features already in tree (prior commit)
+
+- PEM custom certificate upload (BYOC / Cloudflare Origin) — relates to enhancement #3243
+- `deploy/` Ansible bundle pinned to 1.21.1
+
+### Skipped
+
+| Item | Reason |
+|------|--------|
+| PR #3384 IdP validation | Already fixed upstream via `idpExistsForOrg` |
+| PR #3368 wire test runner in CI | Large harness change; local tests need `@test/assert` path |
+| Patch dep bumps (ncu) | `npm install` peer conflict after upgrade; reverted package.json |
+| Full branch graveyard | Shallow clone (`--depth 1`); only tag tip present |
+| Enhanced tunnel types (old 88plug) | Needs redesign on 1.21 models |
+| RDP/CredSSP/Azure AD issues | Needs investigating / EE surface |
+| Kubernetes operator etc. | Out of scope new product |
+
+### Verify
+
+- `npm ci` with **Node 22** (Node 26 fails better-sqlite3 prebuild on this host)
+- `npm run set:oss && npm run set:sqlite && npx tsc --noEmit` → **exit 0**
+- Full `npm run build` (next+esbuild) not run this pass
+
+### DEPENDENCY AUDIT
+
+- ✅ Baseline lockfile from 1.21.1 install: green
+- ⚠️ Patch bumps available (next 16.2.11→16.2.12, axios, etc.) — **not applied** (peer resolve fail)
+- 🔴 Major bumps: not evaluated for apply

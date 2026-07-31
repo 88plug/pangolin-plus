@@ -20,6 +20,8 @@ import {
 import { and, eq, inArray } from "drizzle-orm";
 import * as arctic from "arctic";
 import { generateOidcRedirectUrl } from "@server/lib/idp/generateRedirectUrl";
+import { isSafePostAuthRedirect } from "@server/lib/idp/isSafePostAuthRedirect";
+
 import jmespath from "jmespath";
 import jsonwebtoken from "jsonwebtoken";
 import config from "@server/lib/config";
@@ -184,6 +186,16 @@ export async function validateOidcCallback(
             state,
             redirectUrl: postAuthRedirectUrl
         } = stateObj.data;
+
+        // Defense in depth for #3335 (also validated when the state JWT is issued)
+        if (!isSafePostAuthRedirect(postAuthRedirectUrl)) {
+            return next(
+                createHttpError(
+                    HttpCode.BAD_REQUEST,
+                    "Invalid redirectUrl in OIDC state"
+                )
+            );
+        }
 
         if (state !== expectedState) {
             logger.error("State mismatch", { expectedState, state });
