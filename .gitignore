@@ -56,6 +56,9 @@ drizzle.config.ts
 server/setup/migrations.ts
 solo.yml
 allowedDevOrigins.json
-# component build artifacts
+# component build artifacts (never ignore components/newt source tree)
 components/**/bin/
-components/**/newt
+components/newt/bin/
+components/newt/newt
+components/gerbil/bin/
+components/olm/bin/

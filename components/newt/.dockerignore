@@ -1,0 +1,9 @@
+.gitignore
+.dockerignore
+bin/
+*.json
+README.md
+Makefile
+public/
+LICENSE
+CONTRIBUTING.md

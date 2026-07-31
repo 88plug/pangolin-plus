@@ -1,0 +1,182 @@
+//go:build windows
+
+package network
+
+import (
+	"fmt"
+	"net"
+	"net/netip"
+	"runtime"
+
+	"github.com/fosrl/newt/logger"
+	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
+)
+
+func WindowsAddRoute(destination string, gateway string, interfaceName string) error {
+	if runtime.GOOS != "windows" {
+		return nil
+	}
+
+	// Parse destination CIDR
+	_, ipNet, err := net.ParseCIDR(destination)
+	if err != nil {
+		return fmt.Errorf("invalid destination address: %v", err)
+	}
+
+	// Convert to netip.Prefix
+	maskBits, _ := ipNet.Mask.Size()
+
+	// Ensure we convert to the correct IP version (IPv4 vs IPv6)
+	var addr netip.Addr
+	if ip4 := ipNet.IP.To4(); ip4 != nil {
+		// IPv4 address
+		addr, _ = netip.AddrFromSlice(ip4)
+	} else {
+		// IPv6 address
+		addr, _ = netip.AddrFromSlice(ipNet.IP)
+	}
+	if !addr.IsValid() {
+		return fmt.Errorf("failed to convert destination IP")
+	}
+	prefix := netip.PrefixFrom(addr, maskBits)
+
+	var luid winipcfg.LUID
+	var nextHop netip.Addr
+
+	if interfaceName != "" {
+		// Get the interface LUID - needed for both gateway and interface-only routes
+		iface, err := net.InterfaceByName(interfaceName)
+		if err != nil {
+			return fmt.Errorf("failed to get interface %s: %v", interfaceName, err)
+		}
+
+		luid, err = winipcfg.LUIDFromIndex(uint32(iface.Index))
+		if err != nil {
+			return fmt.Errorf("failed to get LUID for interface %s: %v", interfaceName, err)
+		}
+	}
+
+	if gateway != "" {
+		// Route with specific gateway
+		gwIP := net.ParseIP(gateway)
+		if gwIP == nil {
+			return fmt.Errorf("invalid gateway address: %s", gateway)
+		}
+		// Convert to correct IP version
+		if ip4 := gwIP.To4(); ip4 != nil {
+			nextHop, _ = netip.AddrFromSlice(ip4)
+		} else {
+			nextHop, _ = netip.AddrFromSlice(gwIP)
+		}
+		if !nextHop.IsValid() {
+			return fmt.Errorf("failed to convert gateway IP")
+		}
+		logger.Info("Adding route to %s via gateway %s on interface %s", destination, gateway, interfaceName)
+	} else if interfaceName != "" {
+		// Route via interface only
+		if addr.Is4() {
+			nextHop = netip.IPv4Unspecified()
+		} else {
+			nextHop = netip.IPv6Unspecified()
+		}
+		logger.Info("Adding route to %s via interface %s", destination, interfaceName)
+	} else {
+		return fmt.Errorf("either gateway or interface must be specified")
+	}
+
+	// Add the route using winipcfg. When PreferLocalRoutes is enabled,
+	// metric is set explicitly (rather than a low value like 1, which would
+	// nearly always outrank local routes) so that an overlapping local/
+	// connected route is preferred over this VPN route - see VPNRouteMetric.
+	var metric uint32
+	if PreferLocalRoutes {
+		metric = VPNRouteMetric
+	}
+	err = luid.AddRoute(prefix, nextHop, metric)
+	if err != nil {
+		return fmt.Errorf("failed to add route: %v", err)
+	}
+
+	return nil
+}
+
+func WindowsRemoveRoute(destination string, interfaceName string) error {
+	// Parse destination CIDR
+	_, ipNet, err := net.ParseCIDR(destination)
+	if err != nil {
+		return fmt.Errorf("invalid destination address: %v", err)
+	}
+
+	// Convert to netip.Prefix
+	maskBits, _ := ipNet.Mask.Size()
+
+	// Ensure we convert to the correct IP version (IPv4 vs IPv6)
+	var addr netip.Addr
+	if ip4 := ipNet.IP.To4(); ip4 != nil {
+		// IPv4 address
+		addr, _ = netip.AddrFromSlice(ip4)
+	} else {
+		// IPv6 address
+		addr, _ = netip.AddrFromSlice(ipNet.IP)
+	}
+	if !addr.IsValid() {
+		return fmt.Errorf("failed to convert destination IP")
+	}
+	prefix := netip.PrefixFrom(addr, maskBits)
+
+	// Resolve the LUID of the interface we added the route on, so we only
+	// ever delete the route we own rather than any route matching the
+	// destination - a local/native route to the same destination on a
+	// different interface must never be touched.
+	var luid winipcfg.LUID
+	var haveLuid bool
+	if interfaceName != "" {
+		iface, err := net.InterfaceByName(interfaceName)
+		if err != nil {
+			return fmt.Errorf("failed to get interface %s: %v", interfaceName, err)
+		}
+		luid, err = winipcfg.LUIDFromIndex(uint32(iface.Index))
+		if err != nil {
+			return fmt.Errorf("failed to get LUID for interface %s: %v", interfaceName, err)
+		}
+		haveLuid = true
+	}
+
+	// Get all routes and find the one to delete
+	var family winipcfg.AddressFamily
+	if addr.Is4() {
+		family = 2 // AF_INET
+	} else {
+		family = 23 // AF_INET6
+	}
+
+	routes, err := winipcfg.GetIPForwardTable2(family)
+	if err != nil {
+		return fmt.Errorf("failed to get route table: %v", err)
+	}
+
+	// Find and delete matching route. When we know which interface we added
+	// the route on, only delete the entry on that interface with the metric
+	// we added it with (see PreferLocalRoutes) so we never remove an
+	// unrelated local/native route to the same destination.
+	var wantMetric uint32
+	if PreferLocalRoutes {
+		wantMetric = VPNRouteMetric
+	}
+	for _, route := range routes {
+		routePrefix := route.DestinationPrefix.Prefix()
+		if routePrefix != prefix {
+			continue
+		}
+		if haveLuid && (route.InterfaceLUID != luid || route.Metric != wantMetric) {
+			continue
+		}
+		logger.Info("Removing route to %s on interface %s", destination, interfaceName)
+		if err := route.Delete(); err != nil {
+			return fmt.Errorf("failed to delete route: %v", err)
+		}
+		return nil
+	}
+
+	return fmt.Errorf("route to %s not found", destination)
+}
