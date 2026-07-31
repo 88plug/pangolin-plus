@@ -1,0 +1,561 @@
+---
+# Pangolin Deployment Playbook
+#
+# Prerequisites:
+#   1. A VPS with Docker installed (run play.yml first to harden)
+#   2. Domain with DNS pointing to your VPS IP
+#   3. If using Cloudflare: Origin Certificate (cert.pem + key.pem) in playbook directory
+#
+# Usage: ansible-playbook -i inventory.ini pangolin.yml
+#
+# Features:
+#   - Let's Encrypt OR Cloudflare Origin Certificate (configurable)
+#   - Badger auth middleware (local plugins - no network issues)
+#   - Rate limiting (configurable)
+#   - Geoblocking via MaxMind GeoLite2 (optional)
+#   - Telemetry opt-out
+#   - SMTP support (optional)
+
+- hosts: pangolin_vps
+  become: true
+  vars:
+    # =========================================
+    # REQUIRED - Configure these for your setup
+    # =========================================
+    base_domain: "example.com"           # Your domain
+    admin_email: "admin@example.com"     # For Let's Encrypt notifications
+    vps_ip: "{{ ansible_host }}"
+    pangolin_dir: "/opt/pangolin"
+
+    # =========================================
+    # CERTIFICATE MODE - Choose one:
+    #   "letsencrypt" - Auto-renewing certs (default, DNS must point to VPS)
+    #   "cloudflare"  - 15-year Origin cert (requires cert.pem + key.pem files)
+    # =========================================
+    cert_mode: "letsencrypt"
+
+    # Server secret - auto-generated, or set your own 64-char hex string
+    server_secret: "{{ lookup('password', '/dev/null chars=hexdigits length=64') }}"
+
+    # =========================================
+    # OPTIONAL FEATURES
+    # =========================================
+    enable_geoblocking: false      # MaxMind GeoLite2 country blocking
+    enable_rate_limiting: true     # Rate limiting for API endpoints
+
+    # Rate limiting settings (if enabled)
+    rate_limit_global_requests: 100
+    rate_limit_global_window: "1m"
+    rate_limit_auth_requests: 5
+    rate_limit_auth_window: "1m"
+
+    # =========================================
+    # SMTP SETTINGS (optional - can configure in UI later)
+    # =========================================
+    enable_smtp: false
+    smtp_host: "smtp.example.com"
+    smtp_port: 587
+    smtp_user: "your-smtp-username"
+    smtp_pass: "your-smtp-password"
+    smtp_noreply: "no-reply@example.com"
+
+  handlers:
+    - name: restart pangolin
+      shell: cd {{ pangolin_dir }} && docker compose up -d
+
+    - name: restart nftables
+      systemd: name=nftables state=restarted
+
+  tasks:
+    - name: Validate cert_mode
+      fail:
+        msg: "cert_mode must be 'letsencrypt' or 'cloudflare', got: {{ cert_mode }}"
+      when: cert_mode not in ['letsencrypt', 'cloudflare']
+
+    - name: Check for Cloudflare certificates (if cloudflare mode)
+      when: cert_mode == 'cloudflare'
+      block:
+        - name: Check cert.pem exists
+          local_action: stat path=cert.pem
+          register: cert_file
+          become: false
+
+        - name: Check key.pem exists
+          local_action: stat path=key.pem
+          register: key_file
+          become: false
+
+        - name: Fail if Cloudflare certs missing
+          fail:
+            msg: |
+              Cloudflare mode requires cert.pem and key.pem in the playbook directory.
+              Generate them at: Cloudflare Dashboard > SSL/TLS > Origin Server > Create Certificate
+          when: not cert_file.stat.exists or not key_file.stat.exists
+
+    - name: Ensure nftables has Pangolin ports and Docker rules
+      copy:
+        dest: /etc/nftables.conf
+        content: |
+          #!/usr/sbin/nft -f
+          # Firewall rules for Pangolin - managed by Ansible
+
+          flush ruleset
+
+          table inet filter {
+            chain input {
+              type filter hook input priority 0; policy drop;
+
+              # Allow loopback
+              iif lo accept
+
+              # Allow established/related connections
+              ct state established,related accept
+
+              # Allow SSH
+              tcp dport 22 accept
+
+              # Pangolin ports
+              tcp dport 80 accept comment "HTTP redirect"
+              tcp dport 443 accept comment "HTTPS"
+              udp dport 51820 accept comment "WireGuard tunnel"
+              udp dport 21820 accept comment "Client relay"
+
+              # Allow Docker containers to access host services
+              iifname "docker0" tcp dport 53 accept comment "Docker DNS TCP"
+              iifname "docker0" udp dport 53 accept comment "Docker DNS UDP"
+
+              # Drop everything else
+              counter drop
+            }
+
+            chain forward {
+              type filter hook forward priority 0; policy drop;
+              # Allow Docker container traffic (bridge networks)
+              iifname "br-*" accept
+              oifname "br-*" accept
+              iifname "docker0" accept
+              oifname "docker0" accept
+              ct state established,related accept
+            }
+
+            chain output {
+              type filter hook output priority 0; policy accept;
+            }
+          }
+        mode: '0644'
+      notify: restart nftables
+
+    - name: Create Pangolin directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ pangolin_dir }}"
+        - "{{ pangolin_dir }}/config"
+        - "{{ pangolin_dir }}/config/traefik"
+        - "{{ pangolin_dir }}/config/traefik/certs"
+        - "{{ pangolin_dir }}/config/db"
+        - "{{ pangolin_dir }}/config/logs"
+        - "{{ pangolin_dir }}/plugins-storage"
+        - "{{ pangolin_dir }}/plugins-local/src/github.com/fosrl"
+        - "{{ pangolin_dir }}/letsencrypt"
+
+    - name: Pre-download Badger plugin for local loading
+      shell: |
+        cd {{ pangolin_dir }}/plugins-local/src/github.com/fosrl
+        git clone --depth 1 --branch v1.2.0 https://github.com/fosrl/badger.git
+      args:
+        creates: "{{ pangolin_dir }}/plugins-local/src/github.com/fosrl/badger/go.mod"
+
+    # Cloudflare cert mode - copy static certificates
+    - name: Copy Cloudflare Origin certificate
+      when: cert_mode == 'cloudflare'
+      copy:
+        src: "{{ item.src }}"
+        dest: "{{ pangolin_dir }}/config/traefik/certs/{{ item.dest }}"
+        mode: '0600'
+      loop:
+        - { src: "cert.pem", dest: "cert.pem" }
+        - { src: "key.pem", dest: "key.pem" }
+
+    - name: Download MaxMind GeoLite2 database for geoblocking
+      when: enable_geoblocking
+      shell: |
+        curl -L -o /tmp/GeoLite2-Country.tar.gz \
+          https://github.com/GitSquared/node-geolite2-redist/raw/master/redist/GeoLite2-Country.tar.gz
+        tar -xzf /tmp/GeoLite2-Country.tar.gz -C /tmp/
+        mv /tmp/GeoLite2-Country_*/GeoLite2-Country.mmdb {{ pangolin_dir }}/config/
+        rm -rf /tmp/GeoLite2-Country*
+      args:
+        creates: "{{ pangolin_dir }}/config/GeoLite2-Country.mmdb"
+
+    - name: Deploy docker-compose.yml
+      copy:
+        dest: "{{ pangolin_dir }}/docker-compose.yml"
+        content: |
+          services:
+            pangolin:
+              image: fosrl/pangolin:1.21.1
+              container_name: pangolin
+              restart: unless-stopped
+              networks:
+                - pangolin
+              volumes:
+                - ./config:/app/config
+              healthcheck:
+                test: ["CMD", "curl", "-f", "http://localhost:3001/api/v1/"]
+                interval: 10s
+                timeout: 5s
+                retries: 5
+
+            gerbil:
+              image: fosrl/gerbil:latest
+              container_name: gerbil
+              restart: unless-stopped
+              networks:
+                - pangolin
+              depends_on:
+                pangolin:
+                  condition: service_healthy
+              command:
+                - --reachableAt=http://gerbil:3004
+                - --generateAndSaveKeyTo=/var/config/key
+                - --remoteConfig=http://pangolin:3001/api/v1/
+              volumes:
+                - ./config:/var/config
+              cap_add:
+                - NET_ADMIN
+                - SYS_MODULE
+              ports:
+                - "51820:51820/udp"
+                - "21820:21820/udp"
+                - "443:443"
+                - "80:80"
+
+            traefik:
+              image: traefik:v3.4
+              container_name: traefik
+              restart: unless-stopped
+              network_mode: service:gerbil
+              depends_on:
+                gerbil:
+                  condition: service_started
+              command:
+                - --configFile=/etc/traefik/traefik.yml
+              environment:
+                - XDG_DATA_HOME=/plugins-storage
+              volumes:
+                - ./config/traefik:/etc/traefik:ro
+                - ./plugins-storage:/plugins-storage
+                - ./plugins-local:/plugins-local:ro
+          {% if cert_mode == 'letsencrypt' %}
+                - ./letsencrypt:/letsencrypt
+          {% endif %}
+
+          networks:
+            pangolin:
+              driver: bridge
+
+    - name: Deploy Pangolin config.yml
+      copy:
+        dest: "{{ pangolin_dir }}/config/config.yml"
+        content: |
+          app:
+            dashboard_url: "https://{{ base_domain }}"
+            log_level: "info"
+            telemetry:
+              anonymous_usage: false
+
+          domains:
+            main:
+              base_domain: "{{ base_domain }}"
+
+          server:
+            secret: "{{ server_secret }}"
+            external_port: 3000
+            internal_port: 3001
+            next_port: 3002
+            internal_hostname: "pangolin"
+          {% if enable_geoblocking %}
+            maxmind_db_path: "./config/GeoLite2-Country.mmdb"
+          {% endif %}
+          {% if enable_rate_limiting %}
+            rate_limit:
+              global:
+                requests: {{ rate_limit_global_requests }}
+                window: "{{ rate_limit_global_window }}"
+              auth:
+                requests: {{ rate_limit_auth_requests }}
+                window: "{{ rate_limit_auth_window }}"
+          {% endif %}
+
+          gerbil:
+            base_endpoint: "{{ vps_ip }}"
+            start_port: 51820
+            subnet_group: "100.89.137.0/20"
+            block_size: 24
+            site_block_size: 30
+
+          traefik:
+            http_entrypoint: "web"
+            https_entrypoint: "websecure"
+
+          {% if enable_smtp %}
+          email:
+            smtp_host: "{{ smtp_host }}"
+            smtp_port: {{ smtp_port }}
+            smtp_user: "{{ smtp_user }}"
+            smtp_pass: "{{ smtp_pass }}"
+            smtp_secure: false
+            no_reply: "{{ smtp_noreply }}"
+          {% endif %}
+
+          flags:
+            require_email_verification: {{ enable_smtp | lower }}
+            disable_signup_without_invite: true
+            disable_user_create_org: false
+            enable_clients: true
+      notify: restart pangolin
+
+    # Traefik config - Let's Encrypt mode
+    - name: Deploy Traefik static config (Let's Encrypt)
+      when: cert_mode == 'letsencrypt'
+      copy:
+        dest: "{{ pangolin_dir }}/config/traefik/traefik.yml"
+        content: |
+          api:
+            dashboard: false
+
+          log:
+            level: "WARN"
+
+          # Badger auth middleware - using localPlugins (pre-downloaded)
+          experimental:
+            localPlugins:
+              badger:
+                moduleName: "github.com/fosrl/badger"
+
+          # Let's Encrypt automatic certificates
+          certificatesResolvers:
+            letsencrypt:
+              acme:
+                email: "{{ admin_email }}"
+                storage: "/letsencrypt/acme.json"
+                httpChallenge:
+                  entryPoint: "web"
+
+          entryPoints:
+            web:
+              address: ":80"
+            websecure:
+              address: ":443"
+              http:
+                tls:
+                  certResolver: "letsencrypt"
+                  domains:
+                    - main: "{{ base_domain }}"
+                      sans:
+                        - "*.{{ base_domain }}"
+
+          providers:
+            http:
+              endpoint: "http://pangolin:3001/api/v1/traefik-config"
+              pollInterval: "5s"
+            file:
+              filename: "/etc/traefik/dynamic_config.yml"
+              watch: true
+      notify: restart pangolin
+
+    # Traefik config - Cloudflare mode
+    - name: Deploy Traefik static config (Cloudflare)
+      when: cert_mode == 'cloudflare'
+      copy:
+        dest: "{{ pangolin_dir }}/config/traefik/traefik.yml"
+        content: |
+          api:
+            dashboard: false
+
+          log:
+            level: "WARN"
+
+          # Badger auth middleware - using localPlugins (pre-downloaded)
+          experimental:
+            localPlugins:
+              badger:
+                moduleName: "github.com/fosrl/badger"
+
+          entryPoints:
+            web:
+              address: ":80"
+              http:
+                redirections:
+                  entryPoint:
+                    to: "websecure"
+                    scheme: "https"
+                    permanent: true
+            websecure:
+              address: ":443"
+
+          providers:
+            http:
+              endpoint: "http://pangolin:3001/api/v1/traefik-config"
+              pollInterval: "5s"
+            file:
+              filename: "/etc/traefik/dynamic_config.yml"
+              watch: true
+      notify: restart pangolin
+
+    # Dynamic config - Let's Encrypt mode
+    - name: Deploy Traefik dynamic config (Let's Encrypt)
+      when: cert_mode == 'letsencrypt'
+      copy:
+        dest: "{{ pangolin_dir }}/config/traefik/dynamic_config.yml"
+        content: |
+          http:
+            routers:
+              # Redirect HTTP to HTTPS
+              http-catchall:
+                rule: "HostRegexp(`{host:.+}`)"
+                entryPoints: ["web"]
+                middlewares: ["redirect-to-https"]
+                service: "noop@internal"
+
+              next-router:
+                rule: "Host(`{{ base_domain }}`) && !PathPrefix(`/api/v1`)"
+                entryPoints: ["websecure"]
+                service: "next-service"
+                tls:
+                  certResolver: "letsencrypt"
+
+              api-router:
+                rule: "Host(`{{ base_domain }}`) && PathPrefix(`/api/v1`)"
+                entryPoints: ["websecure"]
+                service: "api-service"
+                tls:
+                  certResolver: "letsencrypt"
+
+              ws-router:
+                rule: "Host(`{{ base_domain }}`) && PathPrefix(`/api/v1/ws`)"
+                entryPoints: ["websecure"]
+                service: "api-service"
+                tls:
+                  certResolver: "letsencrypt"
+
+              wildcard-router:
+                rule: "HostRegexp(`{subdomain:[a-z0-9-]+}.{{ base_domain }}`)"
+                entryPoints: ["websecure"]
+                service: "next-service"
+                tls:
+                  certResolver: "letsencrypt"
+                priority: 1
+
+            middlewares:
+              redirect-to-https:
+                redirectScheme:
+                  scheme: "https"
+                  permanent: true
+
+            services:
+              next-service:
+                loadBalancer:
+                  servers:
+                    - url: "http://pangolin:3002"
+
+              api-service:
+                loadBalancer:
+                  servers:
+                    - url: "http://pangolin:3000"
+      notify: restart pangolin
+
+    # Dynamic config - Cloudflare mode
+    - name: Deploy Traefik dynamic config (Cloudflare)
+      when: cert_mode == 'cloudflare'
+      copy:
+        dest: "{{ pangolin_dir }}/config/traefik/dynamic_config.yml"
+        content: |
+          tls:
+            certificates:
+              - certFile: "/etc/traefik/certs/cert.pem"
+                keyFile: "/etc/traefik/certs/key.pem"
+
+          http:
+            routers:
+              next-router:
+                rule: "Host(`{{ base_domain }}`) && !PathPrefix(`/api/v1`)"
+                entryPoints: ["websecure"]
+                service: "next-service"
+                tls: {}
+
+              api-router:
+                rule: "Host(`{{ base_domain }}`) && PathPrefix(`/api/v1`)"
+                entryPoints: ["websecure"]
+                service: "api-service"
+                tls: {}
+
+              ws-router:
+                rule: "Host(`{{ base_domain }}`) && PathPrefix(`/api/v1/ws`)"
+                entryPoints: ["websecure"]
+                service: "api-service"
+                tls: {}
+
+              wildcard-router:
+                rule: "HostRegexp(`{subdomain:[a-z0-9-]+}.{{ base_domain }}`)"
+                entryPoints: ["websecure"]
+                service: "next-service"
+                tls: {}
+                priority: 1
+
+            services:
+              next-service:
+                loadBalancer:
+                  servers:
+                    - url: "http://pangolin:3002"
+
+              api-service:
+                loadBalancer:
+                  servers:
+                    - url: "http://pangolin:3000"
+      notify: restart pangolin
+
+    - name: Pull Pangolin images
+      shell: cd {{ pangolin_dir }} && docker compose pull
+
+    - name: Start Pangolin
+      shell: cd {{ pangolin_dir }} && docker compose up -d
+
+    - name: Wait for Pangolin to be healthy
+      shell: docker inspect --format='{{ '{{' }}.State.Health.Status{{ '}}' }}' pangolin
+      register: health
+      until: health.stdout == "healthy"
+      retries: 30
+      delay: 10
+      ignore_errors: true
+
+    - name: Show setup URL
+      debug:
+        msg: |
+
+          ============================================
+          Pangolin deployed successfully!
+
+          Certificate mode: {{ cert_mode | upper }}
+          {% if cert_mode == 'letsencrypt' %}
+
+          DNS SETUP (direct to VPS - no proxy):
+            A record:  {{ base_domain }}    -> {{ ansible_host }}
+            A record:  *.{{ base_domain }}  -> {{ ansible_host }}
+
+          Let's Encrypt will auto-generate certificates on first request.
+          {% else %}
+
+          CLOUDFLARE DNS (orange cloud ON):
+            A record:  {{ base_domain }}    -> {{ ansible_host }}
+            A record:  *.{{ base_domain }}  -> {{ ansible_host }}
+
+          CLOUDFLARE SSL/TLS:
+            Mode: Full (Strict)
+          {% endif %}
+
+          Initial setup: https://{{ base_domain }}/auth/initial-setup
+          ============================================

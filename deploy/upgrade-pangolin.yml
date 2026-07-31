@@ -1,0 +1,220 @@
+---
+# Pangolin Safe Upgrade - Backup, upgrade, health check, auto-rollback
+# Usage: ansible-playbook -i inventory.ini upgrade-pangolin.yml
+#
+# Features:
+#   - Pre-upgrade health check (fails if already unhealthy)
+#   - Full config backup with timestamp
+#   - Graceful container stop
+#   - Image pull with retries
+#   - Post-upgrade health check with timeout
+#   - Auto-generated rollback.sh script
+#   - Backup cleanup (keeps last N backups)
+
+- hosts: pangolin_vps
+  become: true
+  vars:
+    pangolin_dir: "/opt/pangolin"
+    backup_dir: "/opt/pangolin/backups"
+    backup_retention_count: 5
+
+    # Image versions (use 'latest' or pin to specific version)
+    pangolin_version: "latest"
+    gerbil_version: "latest"
+    traefik_version: "v3.4"
+
+    # Health check settings
+    health_check_retries: 30
+    health_check_delay: 10
+
+  tasks:
+    - name: Get current timestamp
+      set_fact:
+        backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+    - name: Pre-upgrade health check
+      shell: |
+        docker inspect --format='{{ '{{' }}.State.Health.Status{{ '}}' }}' pangolin 2>/dev/null || echo "not_running"
+      register: pre_health
+      changed_when: false
+
+    - name: Get current image versions before upgrade
+      shell: |
+        echo "pangolin:$(docker inspect --format='{{ '{{' }}.Config.Image{{ '}}' }}' pangolin 2>/dev/null || echo 'none')"
+        echo "gerbil:$(docker inspect --format='{{ '{{' }}.Config.Image{{ '}}' }}' gerbil 2>/dev/null || echo 'none')"
+        echo "traefik:$(docker inspect --format='{{ '{{' }}.Config.Image{{ '}}' }}' traefik 2>/dev/null || echo 'none')"
+      register: current_versions
+      changed_when: false
+
+    - name: Display pre-upgrade status
+      debug:
+        msg: |
+          Pre-upgrade status:
+            Health: {{ pre_health.stdout }}
+            Current versions:
+          {{ current_versions.stdout | indent(4) }}
+
+    - name: Fail if Pangolin is not healthy (unless not running)
+      fail:
+        msg: "Pangolin is unhealthy ({{ pre_health.stdout }}). Fix issues before upgrading."
+      when: pre_health.stdout not in ['healthy', 'not_running']
+
+    - name: Create backup directory
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Create timestamped backup
+      archive:
+        path:
+          - "{{ pangolin_dir }}/config"
+          - "{{ pangolin_dir }}/docker-compose.yml"
+        dest: "{{ backup_dir }}/pangolin-backup-{{ backup_timestamp }}.tar.gz"
+        format: gz
+      register: backup_result
+
+    - name: Verify backup was created and has content
+      stat:
+        path: "{{ backup_dir }}/pangolin-backup-{{ backup_timestamp }}.tar.gz"
+      register: backup_stat
+
+    - name: Fail if backup is empty or missing
+      fail:
+        msg: "Backup failed or is empty! Aborting upgrade."
+      when: backup_stat.stat.size | default(0) < 1000
+
+    - name: Display backup info
+      debug:
+        msg: "Backup created: {{ backup_dir }}/pangolin-backup-{{ backup_timestamp }}.tar.gz ({{ backup_stat.stat.size | filesizeformat }})"
+
+    - name: Stop containers gracefully
+      shell: cd {{ pangolin_dir }} && docker compose down --timeout 30
+      register: stop_result
+      ignore_errors: true
+
+    - name: Pull new images
+      shell: cd {{ pangolin_dir }} && docker compose pull
+      register: pull_result
+      retries: 3
+      delay: 10
+      until: pull_result.rc == 0
+
+    - name: Start containers
+      shell: cd {{ pangolin_dir }} && docker compose up -d
+      register: start_result
+
+    - name: Wait for Pangolin to be healthy
+      shell: docker inspect --format='{{ '{{' }}.State.Health.Status{{ '}}' }}' pangolin
+      register: health
+      until: health.stdout == "healthy"
+      retries: "{{ health_check_retries }}"
+      delay: "{{ health_check_delay }}"
+      ignore_errors: true
+
+    - name: Get post-upgrade container status
+      shell: docker ps --format 'table {{ '{{' }}.Names{{ '}}' }}\t{{ '{{' }}.Status{{ '}}' }}\t{{ '{{' }}.Image{{ '}}' }}'
+      register: post_containers
+      changed_when: false
+
+    - name: Check if upgrade was successful
+      set_fact:
+        upgrade_successful: "{{ health.stdout | default('') == 'healthy' }}"
+
+    - name: Generate rollback script
+      copy:
+        dest: "{{ pangolin_dir }}/rollback.sh"
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          # Auto-generated rollback script for Pangolin
+          # Created: {{ backup_timestamp }}
+          # Backup: {{ backup_dir }}/pangolin-backup-{{ backup_timestamp }}.tar.gz
+
+          set -e
+
+          BACKUP_FILE="{{ backup_dir }}/pangolin-backup-{{ backup_timestamp }}.tar.gz"
+          PANGOLIN_DIR="{{ pangolin_dir }}"
+
+          echo "=== Pangolin Rollback ==="
+          echo "Backup file: $BACKUP_FILE"
+          echo ""
+
+          if [ ! -f "$BACKUP_FILE" ]; then
+              echo "ERROR: Backup file not found!"
+              exit 1
+          fi
+
+          echo "Step 1: Stopping containers..."
+          cd "$PANGOLIN_DIR"
+          docker compose down --timeout 30
+
+          echo "Step 2: Removing current config..."
+          rm -rf "$PANGOLIN_DIR/config"
+          rm -f "$PANGOLIN_DIR/docker-compose.yml"
+
+          echo "Step 3: Restoring from backup..."
+          cd "$PANGOLIN_DIR"
+          tar -xzf "$BACKUP_FILE" --strip-components=2
+
+          echo "Step 4: Starting containers..."
+          docker compose up -d
+
+          echo "Step 5: Waiting for health check..."
+          for i in {1..30}; do
+              status=$(docker inspect --format='{{ '{{' }}.State.Health.Status{{ '}}' }}' pangolin 2>/dev/null || echo "starting")
+              echo "  Attempt $i/30: $status"
+              if [ "$status" = "healthy" ]; then
+                  echo ""
+                  echo "=== Rollback successful! ==="
+                  docker ps --format 'table {{ '{{' }}.Names{{ '}}' }}\t{{ '{{' }}.Status{{ '}}' }}'
+                  exit 0
+              fi
+              sleep 10
+          done
+
+          echo ""
+          echo "WARNING: Health check timeout. Check container logs:"
+          echo "  docker logs pangolin"
+          echo "  docker logs gerbil"
+          echo "  docker logs traefik"
+          exit 1
+
+    - name: Clean up old backups (keep last N)
+      shell: |
+        cd {{ backup_dir }}
+        ls -1t pangolin-backup-*.tar.gz 2>/dev/null | tail -n +{{ backup_retention_count + 1 }} | xargs -r rm -f
+      changed_when: false
+
+    - name: Display upgrade result
+      debug:
+        msg: |
+
+          ============================================
+          {% if upgrade_successful %}
+          UPGRADE SUCCESSFUL
+          {% else %}
+          UPGRADE FAILED - Health check timeout
+          {% endif %}
+
+          Container status:
+          {{ post_containers.stdout }}
+
+          Backup: {{ backup_dir }}/pangolin-backup-{{ backup_timestamp }}.tar.gz
+
+          {% if not upgrade_successful %}
+          TO ROLLBACK:
+            {{ pangolin_dir }}/rollback.sh
+
+          Or manually:
+            cd {{ pangolin_dir }}
+            docker compose down
+            tar -xzf {{ backup_dir }}/pangolin-backup-{{ backup_timestamp }}.tar.gz -C /opt --strip-components=1
+            docker compose up -d
+          {% endif %}
+          ============================================
+
+    - name: Fail playbook if upgrade was unsuccessful
+      fail:
+        msg: "Upgrade health check failed. Run {{ pangolin_dir }}/rollback.sh to restore."
+      when: not upgrade_successful

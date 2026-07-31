@@ -122,6 +122,9 @@ export enum ActionsEnum {
     deleteSiteProvisioningKey = "deleteSiteProvisioningKey",
     getCertificate = "getCertificate",
     restartCertificate = "restartCertificate",
+    /** OSS-plus: upload custom PEM cert for a domain (Cloudflare Origin, etc.) */
+    uploadCertificate = "uploadCertificate",
+
     billing = "billing",
     createOrgDomain = "createOrgDomain",
     deleteOrgDomain = "deleteOrgDomain",

@@ -1,0 +1,13 @@
+# Ansible Inventory Example
+# Copy this file to inventory.ini and update with your values
+
+[pangolin_vps]
+# RackNerd VPS uses password auth by default (no SSH keys at creation)
+my-vps ansible_host=YOUR_VPS_IP ansible_user=root ansible_ssh_pass=YOUR_ROOT_PASSWORD
+
+# Examples:
+# Password auth (RackNerd default):
+# my-vps ansible_host=192.168.1.100 ansible_user=root ansible_ssh_pass=MySecurePassword123
+
+# SSH key auth (if you set up keys later):
+# my-vps ansible_host=192.168.1.100 ansible_user=root ansible_port=22

@@ -1,0 +1,341 @@
+---
+# Pangolin Deployment - Debian 13 Trixie with nftables
+#
+# Usage:
+#   ansible-playbook -i 'SERVER_IP,' playbook-debian-trixie.yml -u root \
+#     -e pangolin_dashboard_url=https://pangolin.example.com \
+#     -e pangolin_base_domain=example.com \
+#     -e pangolin_secret=$(openssl rand -base64 32 | tr -d '=+/' | cut -c1-32) \
+#     -e pangolin_admin_email=admin@example.com
+
+- name: Deploy Pangolin (Debian Trixie)
+  hosts: all
+  become: true
+
+  vars:
+    pangolin_dir: "/home/{{ ansible_user }}/pangolin"
+    pangolin_host: "{{ pangolin_dashboard_url | regex_replace('^https://', '') }}"
+
+  tasks:
+    # === Validation ===
+    - name: Validate required variables
+      assert:
+        that:
+          - pangolin_dashboard_url is defined
+          - pangolin_base_domain is defined
+          - pangolin_secret is defined
+          - pangolin_secret | length >= 16
+          - pangolin_admin_email is defined
+        fail_msg: "Required: -e pangolin_dashboard_url=... -e pangolin_base_domain=... -e pangolin_secret=... -e pangolin_admin_email=..."
+
+    - name: Verify Debian Trixie
+      assert:
+        that:
+          - ansible_distribution == "Debian"
+          - ansible_distribution_major_version | int >= 13
+        fail_msg: "This playbook requires Debian 13 (Trixie) or later"
+
+    # === System Setup ===
+    - name: Install packages
+      apt:
+        name: [curl, gnupg, ca-certificates, nftables]
+        state: present
+        update_cache: yes
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - name: Create swap
+      command: "{{ item }}"
+      loop:
+        - fallocate -l 1G /swapfile
+        - chmod 600 /swapfile
+        - mkswap /swapfile
+      args:
+        creates: /swapfile
+
+    - name: Enable swap
+      command: swapon /swapfile
+      changed_when: false
+      failed_when: false
+
+    - name: Persist swap
+      lineinfile:
+        path: /etc/fstab
+        line: "/swapfile none swap sw 0 0"
+
+    # === nftables Firewall ===
+    - name: Enable nftables service
+      service:
+        name: nftables
+        state: started
+        enabled: yes
+
+    - name: Deploy nftables configuration
+      copy:
+        dest: /etc/nftables.conf
+        mode: '0644'
+        content: |
+          #!/usr/sbin/nft -f
+
+          flush ruleset
+
+          table inet filter {
+            chain input {
+              type filter hook input priority 0; policy drop;
+
+              # Allow established/related connections
+              ct state established,related accept
+
+              # Allow loopback
+              iif "lo" accept
+
+              # Allow ICMP/ICMPv6
+              ip protocol icmp accept
+              ip6 nexthdr icmpv6 accept
+
+              # Allow SSH (adjust port if needed)
+              tcp dport 22 accept
+
+              # Pangolin ports
+              tcp dport 80 accept
+              tcp dport 443 accept
+              udp dport 51820 accept
+            }
+
+            chain forward {
+              type filter hook forward priority 0; policy accept;
+            }
+
+            chain output {
+              type filter hook output priority 0; policy accept;
+            }
+          }
+      register: nft_cfg
+
+    - name: Reload nftables
+      service:
+        name: nftables
+        state: reloaded
+      when: nft_cfg.changed
+
+    # === Docker ===
+    - name: Install Docker
+      apt:
+        name: [docker.io, docker-compose]
+        state: present
+
+    - name: Start Docker
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    # === Pangolin ===
+    - name: Create directories
+      file:
+        path: "{{ item }}"
+        state: directory
+      loop:
+        - "{{ pangolin_dir }}"
+        - "{{ pangolin_dir }}/config"
+        - "{{ pangolin_dir }}/config/traefik"
+        - "{{ pangolin_dir }}/config/letsencrypt"
+
+    - name: Deploy docker-compose.yml
+      copy:
+        dest: "{{ pangolin_dir }}/docker-compose.yml"
+        content: |
+          services:
+            pangolin:
+              image: fosrl/pangolin:1.21.1
+              container_name: pangolin
+              restart: unless-stopped
+              volumes:
+                - ./config:/app/config
+              healthcheck:
+                test: ["CMD", "curl", "-f", "http://localhost:3001/api/v1/"]
+                interval: 3s
+                timeout: 3s
+                retries: 15
+
+            gerbil:
+              image: fosrl/gerbil:latest
+              container_name: gerbil
+              restart: unless-stopped
+              depends_on:
+                pangolin:
+                  condition: service_healthy
+              command:
+                - --reachableAt=http://gerbil:3004
+                - --generateAndSaveKeyTo=/var/config/key
+                - --remoteConfig=http://pangolin:3001/api/v1/gerbil/get-config
+                - --reportBandwidthTo=http://pangolin:3001/api/v1/gerbil/receive-bandwidth
+              volumes:
+                - ./config:/var/config
+              cap_add:
+                - NET_ADMIN
+                - SYS_MODULE
+              ports:
+                - "51820:51820/udp"
+                - "443:443"
+                - "80:80"
+
+            traefik:
+              image: traefik:v3.4.0
+              container_name: traefik
+              restart: unless-stopped
+              network_mode: service:gerbil
+              depends_on:
+                pangolin:
+                  condition: service_healthy
+              command:
+                - --configFile=/etc/traefik/traefik_config.yml
+              volumes:
+                - ./config/traefik:/etc/traefik:ro
+                - ./config/letsencrypt:/letsencrypt
+
+          networks:
+            default:
+              name: pangolin
+      register: compose_cfg
+
+    - name: Deploy config.yml
+      copy:
+        dest: "{{ pangolin_dir }}/config/config.yml"
+        mode: '0600'
+        content: |
+          app:
+            dashboard_url: "{{ pangolin_dashboard_url }}"
+          domains:
+            domain1:
+              base_domain: "{{ pangolin_base_domain }}"
+              cert_resolver: "letsencrypt"
+          server:
+            secret: "{{ pangolin_secret }}"
+          gerbil:
+            start_port: 51820
+            base_endpoint: "{{ pangolin_base_domain }}"
+          users:
+            server_admin:
+              email: "{{ pangolin_admin_email }}"
+          flags:
+            require_email_verification: false
+            disable_signup_without_invite: true
+            disable_user_create_org: true
+      register: app_cfg
+
+    - name: Deploy traefik_config.yml
+      copy:
+        dest: "{{ pangolin_dir }}/config/traefik/traefik_config.yml"
+        content: |
+          api:
+            insecure: true
+            dashboard: true
+          providers:
+            http:
+              endpoint: "http://pangolin:3001/api/v1/traefik-config"
+              pollInterval: "5s"
+            file:
+              filename: "/etc/traefik/dynamic_config.yml"
+          experimental:
+            plugins:
+              badger:
+                moduleName: "github.com/fosrl/badger"
+                version: "v1.2.0"
+          log:
+            level: "INFO"
+          certificatesResolvers:
+            letsencrypt:
+              acme:
+                httpChallenge:
+                  entryPoint: web
+                email: "{{ pangolin_admin_email }}"
+                storage: "/letsencrypt/acme.json"
+                caServer: "https://acme-v02.api.letsencrypt.org/directory"
+          entryPoints:
+            web:
+              address: ":80"
+            websecure:
+              address: ":443"
+              transport:
+                respondingTimeouts:
+                  readTimeout: "30m"
+              http:
+                tls:
+                  certResolver: "letsencrypt"
+          serversTransport:
+            insecureSkipVerify: true
+          ping:
+            entryPoint: "web"
+      register: traefik_cfg
+
+    - name: Deploy dynamic_config.yml
+      copy:
+        dest: "{{ pangolin_dir }}/config/traefik/dynamic_config.yml"
+        content: |
+          http:
+            middlewares:
+              redirect-to-https:
+                redirectScheme:
+                  scheme: https
+            routers:
+              redirect:
+                rule: "Host(`{{ pangolin_host }}`)"
+                service: next
+                entryPoints: [web]
+                middlewares: [redirect-to-https]
+              next:
+                rule: "Host(`{{ pangolin_host }}`) && !PathPrefix(`/api/v1`)"
+                service: next
+                entryPoints: [websecure]
+                tls:
+                  certResolver: letsencrypt
+              api:
+                rule: "Host(`{{ pangolin_host }}`) && PathPrefix(`/api/v1`)"
+                service: api
+                entryPoints: [websecure]
+                tls:
+                  certResolver: letsencrypt
+            services:
+              next:
+                loadBalancer:
+                  servers:
+                    - url: "http://pangolin:3002"
+              api:
+                loadBalancer:
+                  servers:
+                    - url: "http://pangolin:3000"
+      register: dynamic_cfg
+
+    # === Container Management ===
+    - name: Pull images
+      command: docker-compose pull
+      args:
+        chdir: "{{ pangolin_dir }}"
+      register: pull
+      changed_when: "'Pull complete' in pull.stderr or 'Downloaded' in pull.stderr"
+
+    - name: Recreate containers (config changed)
+      command: docker-compose up -d --force-recreate
+      args:
+        chdir: "{{ pangolin_dir }}"
+      when: compose_cfg.changed or app_cfg.changed or traefik_cfg.changed or dynamic_cfg.changed or pull.changed
+
+    - name: Ensure containers running
+      command: docker-compose up -d
+      args:
+        chdir: "{{ pangolin_dir }}"
+      register: up
+      changed_when: "'Started' in up.stderr or 'Creating' in up.stderr"
+
+    - name: Wait for healthy
+      command: docker inspect --format '{{ '{{' }}.State.Health.Status{{ '}}' }}' pangolin
+      register: health
+      until: health.stdout == 'healthy'
+      retries: 30
+      delay: 5
+      changed_when: false
+
+    - name: Done
+      debug:
+        msg: "Pangolin ready at {{ pangolin_dashboard_url }}"

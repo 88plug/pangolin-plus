@@ -55,6 +55,8 @@ import { createStore } from "#dynamic/lib/rateLimitStore";
 import { logActionAudit } from "#dynamic/middlewares";
 import { checkRoundTripMessage } from "./ws";
 import * as labels from "@server/routers/labels";
+import * as certificates from "./certificates";
+
 
 // Root routes
 export const unauthenticated = Router();
@@ -1318,6 +1320,24 @@ authenticated.delete(
     verifyUserHasAction(ActionsEnum.deleteOrgDomain),
     logActionAudit(ActionsEnum.deleteOrgDomain),
     domain.deleteAccountDomain
+);
+
+// pangolin-plus: custom PEM certificate upload (Cloudflare Origin Certs, etc.)
+authenticated.post(
+    `/org/:orgId/domain/:domainId/certificate/upload`,
+    verifyOrgAccess,
+    verifyDomainAccess,
+    verifyUserHasAction(ActionsEnum.uploadCertificate),
+    logActionAudit(ActionsEnum.uploadCertificate),
+    certificates.uploadCertificate
+);
+
+authenticated.get(
+    `/org/:orgId/domain/:domainId/certificate/local`,
+    verifyOrgAccess,
+    verifyDomainAccess,
+    verifyUserHasAction(ActionsEnum.getDomain),
+    certificates.getLocalCertificate
 );
 
 authenticated.get(
