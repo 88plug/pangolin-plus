@@ -102,7 +102,7 @@ export const sites = pgTable(
         megabytesIn: real("bytesIn").default(0),
         megabytesOut: real("bytesOut").default(0),
         lastBandwidthUpdate: varchar("lastBandwidthUpdate"),
-        type: varchar("type").notNull(), // "newt" or "wireguard"
+        type: varchar("type").notNull(), // "newt" or "wireguard" or "local"
         online: boolean("online").notNull().default(false),
         lastPing: integer("lastPing"),
         address: varchar("address"),
@@ -122,7 +122,21 @@ export const sites = pgTable(
             .default(false),
         status: varchar("status")
             .$type<"pending" | "approved">()
-            .default("approved")
+            .default("approved"),
+        // pangolin-plus tunnel redesign (see server/lib/tunnels/tunnelProfiles.ts)
+        routingMode: varchar("routingMode")
+            .$type<"full-tunnel" | "selective">()
+            .notNull()
+            .default("selective"),
+        tunnelProfile: varchar("tunnelProfile")
+            .$type<
+                | "standard"
+                | "secure-vpn"
+                | "split-tunnel"
+                | "privacy-gateway"
+            >()
+            .notNull()
+            .default("standard")
     },
     (t) => [
         index("idx_sites_exitnodeid").on(t.exitNodeId),

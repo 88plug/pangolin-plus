@@ -67,6 +67,13 @@ export type SiteRow = {
     mbOut: string;
     orgId: string;
     type: "newt" | "wireguard" | "local";
+    routingMode?: "full-tunnel" | "selective" | null;
+    tunnelProfile?:
+        | "standard"
+        | "secure-vpn"
+        | "split-tunnel"
+        | "privacy-gateway"
+        | null;
     newtVersion?: string;
     newtUpdateAvailable?: boolean;
     online?: boolean | null;
@@ -407,9 +414,21 @@ export default function SitesTable({
                     }
 
                     if (originalRow.type === "wireguard") {
+                        const profile = originalRow.tunnelProfile;
+                        const profileLabel =
+                            profile && profile !== "standard"
+                                ? profile
+                                : originalRow.routingMode === "full-tunnel"
+                                  ? "full-tunnel"
+                                  : null;
                         return (
                             <div className="flex items-center space-x-2">
                                 <Badge variant="secondary">WireGuard</Badge>
+                                {profileLabel && (
+                                    <Badge variant="outline">
+                                        {profileLabel}
+                                    </Badge>
+                                )}
                             </div>
                         );
                     }

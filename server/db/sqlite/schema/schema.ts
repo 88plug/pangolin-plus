@@ -111,7 +111,7 @@ export const sites = sqliteTable("sites", {
     megabytesIn: integer("bytesIn").default(0),
     megabytesOut: integer("bytesOut").default(0),
     lastBandwidthUpdate: text("lastBandwidthUpdate"),
-    type: text("type").notNull(), // "newt" or "wireguard"
+    type: text("type").notNull(), // "newt" or "wireguard" or "local"
     online: integer("online", { mode: "boolean" }).notNull().default(false),
     lastPing: integer("lastPing"),
 
@@ -133,7 +133,21 @@ export const sites = sqliteTable("sites", {
     })
         .notNull()
         .default(false),
-    status: text("status").$type<"pending" | "approved">().default("approved")
+    status: text("status").$type<"pending" | "approved">().default("approved"),
+    // pangolin-plus tunnel redesign (see server/lib/tunnels/tunnelProfiles.ts)
+    routingMode: text("routingMode")
+        .$type<"full-tunnel" | "selective">()
+        .notNull()
+        .default("selective"),
+    tunnelProfile: text("tunnelProfile")
+        .$type<
+            | "standard"
+            | "secure-vpn"
+            | "split-tunnel"
+            | "privacy-gateway"
+        >()
+        .notNull()
+        .default("standard")
 });
 
 export const resources = sqliteTable("resources", {

@@ -113,6 +113,15 @@ export default function Page() {
                     message: t("nameMax", { len: 30 })
                 }),
             method: z.enum(["newt", "wireguard", "local"]),
+            // pangolin-plus: WireGuard tunnel profile (maps to routingMode server-side)
+            tunnelProfile: z
+                .enum([
+                    "standard",
+                    "secure-vpn",
+                    "split-tunnel",
+                    "privacy-gateway"
+                ])
+                .optional(),
             copied: z.boolean(),
             clientAddress: z.string().optional(),
             acceptClients: z.boolean(),
@@ -215,6 +224,7 @@ export default function Page() {
             name: "",
             copied: false,
             method: "newt",
+            tunnelProfile: "standard",
             clientAddress: "",
             acceptClients: true,
             exitNodeId: undefined
@@ -244,7 +254,8 @@ export default function Page() {
                 ...payload,
                 subnet: siteDefaults.subnet,
                 exitNodeId: siteDefaults.exitNodeId,
-                pubKey: publicKey
+                pubKey: publicKey,
+                tunnelProfile: data.tunnelProfile || "standard"
             };
         }
         if (data.method === "newt") {
@@ -466,6 +477,82 @@ export default function Page() {
                                             cols={3}
                                         />
                                     </>
+                                )}
+                                {form.watch("method") === "wireguard" && (
+                                    <div className="mt-4 space-y-2">
+                                        <span className="text-sm font-medium">
+                                            {t("tunnelProfile", {
+                                                fallback: "Tunnel Profile"
+                                            })}
+                                        </span>
+                                        <p className="text-sm text-muted-foreground">
+                                            {t("tunnelProfileDescription", {
+                                                fallback:
+                                                    "Presets set routing mode. Secure VPN and Privacy Gateway route all traffic; Split Tunnel only reaches site targets."
+                                            })}
+                                        </p>
+                                        <FormField
+                                            control={form.control}
+                                            name="tunnelProfile"
+                                            render={({ field }) => (
+                                                <FormItem>
+                                                    <FormControl>
+                                                        <select
+                                                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                                            value={
+                                                                field.value ||
+                                                                "standard"
+                                                            }
+                                                            onChange={(e) =>
+                                                                field.onChange(
+                                                                    e.target
+                                                                        .value
+                                                                )
+                                                            }
+                                                        >
+                                                            <option value="standard">
+                                                                {t(
+                                                                    "tunnelProfileStandard",
+                                                                    {
+                                                                        fallback:
+                                                                            "Standard (selective)"
+                                                                    }
+                                                                )}
+                                                            </option>
+                                                            <option value="secure-vpn">
+                                                                {t(
+                                                                    "tunnelProfileSecureVpn",
+                                                                    {
+                                                                        fallback:
+                                                                            "Secure VPN (full tunnel)"
+                                                                    }
+                                                                )}
+                                                            </option>
+                                                            <option value="split-tunnel">
+                                                                {t(
+                                                                    "tunnelProfileSplitTunnel",
+                                                                    {
+                                                                        fallback:
+                                                                            "Split Tunnel (targets only)"
+                                                                    }
+                                                                )}
+                                                            </option>
+                                                            <option value="privacy-gateway">
+                                                                {t(
+                                                                    "tunnelProfilePrivacyGateway",
+                                                                    {
+                                                                        fallback:
+                                                                            "Privacy Gateway (full tunnel + edge DNS)"
+                                                                    }
+                                                                )}
+                                                            </option>
+                                                        </select>
+                                                    </FormControl>
+                                                    <FormMessage />
+                                                </FormItem>
+                                            )}
+                                        />
+                                    </div>
                                 )}
                                 <SettingsSectionForm variant="half">
                                     <Form {...form}>

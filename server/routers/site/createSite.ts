@@ -21,6 +21,13 @@ import { build } from "@server/build";
 import { usageService } from "@server/lib/billing/usageService";
 import { LimitId } from "@server/lib/billing";
 import { generateId } from "@server/auth/sessions/app";
+import {
+    defaultsForTunnelProfile,
+    applyRoutingModeToAllowedIps,
+    type TunnelProfile,
+    type RoutingMode
+} from "@server/lib/tunnels/tunnelProfiles";
+
 
 const createSiteParamsSchema = z.strictObject({
     orgId: z.string()
@@ -41,7 +48,17 @@ const createSiteSchema = z.strictObject({
     newtId: z.string().optional(),
     secret: z.string().optional(),
     address: z.string().optional(),
-    type: z.enum(["newt", "wireguard", "local"])
+    type: z.enum(["newt", "wireguard", "local"]),
+    // pangolin-plus: WireGuard tunnel profile (does not change sites.type)
+    tunnelProfile: z
+        .enum([
+            "standard",
+            "secure-vpn",
+            "split-tunnel",
+            "privacy-gateway"
+        ])
+        .optional(),
+    routingMode: z.enum(["full-tunnel", "selective"]).optional()
 });
 // .refine((data) => {
 //     if (data.type === "local") {
@@ -121,8 +138,23 @@ export async function createSite(
             newtId,
             secret,
             address,
-            niceId
+            niceId,
+            tunnelProfile: tunnelProfileIn,
+            routingMode: routingModeIn
         } = parsedBody.data;
+
+        // Resolve tunnel profile defaults for wireguard sites
+        let tunnelProfile: TunnelProfile = tunnelProfileIn ?? "standard";
+        let routingMode: RoutingMode = routingModeIn ?? "selective";
+        if (type === "wireguard") {
+            if (tunnelProfileIn && !routingModeIn) {
+                routingMode =
+                    defaultsForTunnelProfile(tunnelProfileIn).routingMode;
+            }
+        } else {
+            tunnelProfile = "standard";
+            routingMode = "selective";
+        }
 
         const updatedNewtSecret = secret || generateId(48);
         const updatedNewtId = newtId || generateId(15);
@@ -430,7 +462,9 @@ export async function createSite(
                             subnet,
                             type,
                             pubKey: pubKey || null,
-                            status: "approved"
+                            status: "approved",
+                            routingMode,
+                            tunnelProfile
                         })
                         .returning();
                 } else if (type == "local") {
@@ -517,9 +551,15 @@ export async function createSite(
                         );
                     }
 
+                    // Initial peer; AllowedIPs refined as targets are added.
+                    // full-tunnel sites also advertise 0.0.0.0/0 immediately.
+                    const initialAllowed = applyRoutingModeToAllowedIps(
+                        subnet ? [subnet] : [],
+                        routingMode
+                    );
                     await addPeer(exitNodeId, {
                         publicKey: pubKey,
-                        allowedIps: []
+                        allowedIps: initialAllowed
                     });
                 }
 

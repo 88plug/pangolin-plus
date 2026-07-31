@@ -12,6 +12,7 @@ import HttpCode from "@server/types/HttpCode";
 import createHttpError from "http-errors";
 import logger from "@server/logger";
 import { addPeer } from "../gerbil/peers";
+import { applyRoutingModeToAllowedIps } from "@server/lib/tunnels/tunnelProfiles";
 import { isIpInCidr } from "@server/lib/ip";
 import { fromError } from "zod-validation-error";
 import { addTargets } from "../newt/targets";
@@ -382,9 +383,17 @@ export async function createTarget(
 
         if (site.pubKey) {
             if (site.type == "wireguard") {
+                const base = site.subnet
+                    ? [site.subnet, ...targetIps.flat()]
+                    : targetIps.flat();
+                const allowedIps = applyRoutingModeToAllowedIps(
+                    base,
+                    (site as { routingMode?: "full-tunnel" | "selective" })
+                        .routingMode
+                );
                 await addPeer(site.exitNodeId!, {
                     publicKey: site.pubKey,
-                    allowedIps: targetIps.flat()
+                    allowedIps
                 });
             } else if (site.type == "newt") {
                 // get the newt on the site by querying the newt table for siteId

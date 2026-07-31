@@ -11,6 +11,13 @@ import { fromError } from "zod-validation-error";
 import { OpenAPITags, registry } from "@server/openApi";
 import { isLicensedOrSubscribed } from "#dynamic/lib/isLicencedOrSubscribed";
 import { tierMatrix, TierFeature } from "@server/lib/billing/tierMatrix";
+import { addPeer } from "../gerbil/peers";
+import { getAllowedIps } from "../target/helpers";
+import {
+    defaultsForTunnelProfile,
+    applyRoutingModeToAllowedIps
+} from "@server/lib/tunnels/tunnelProfiles";
+
 
 const updateSiteParamsSchema = z.strictObject({
     siteId: z.coerce.number().int().positive()
@@ -22,7 +29,17 @@ const updateSiteBodySchema = z
         niceId: z.string().min(1).max(255).optional(),
         dockerSocketEnabled: z.boolean().optional(),
         autoUpdateEnabled: z.boolean().optional(),
-        autoUpdateOverrideOrg: z.boolean().optional()
+        autoUpdateOverrideOrg: z.boolean().optional(),
+        // pangolin-plus tunnel redesign
+        routingMode: z.enum(["full-tunnel", "selective"]).optional(),
+        tunnelProfile: z
+            .enum([
+                "standard",
+                "secure-vpn",
+                "split-tunnel",
+                "privacy-gateway"
+            ])
+            .optional()
     })
     .refine((data) => Object.keys(data).length > 0, {
         error: "At least one field must be provided for update"
@@ -138,28 +155,53 @@ export async function updateSite(
             parsedBody.data.autoUpdateOverrideOrg = false; // force it off
         }
 
-        // // if remoteSubnets is provided, ensure it's a valid comma-separated list of cidrs
-        // if (updateData.remoteSubnets) {
-        //     const subnets = updateData.remoteSubnets
-        //         .split(",")
-        //         .map((s) => s.trim());
-        //     for (const subnet of subnets) {
-        //         if (!isValidCIDR(subnet)) {
-        //             return next(
-        //                 createHttpError(
-        //                     HttpCode.BAD_REQUEST,
-        //                     `Invalid CIDR format: ${subnet}`
-        //                 )
-        //             );
-        //         }
-        //     }
-        // }
+        // If tunnel profile set without routingMode, apply profile defaults
+        if (updateData.tunnelProfile && updateData.routingMode === undefined) {
+            updateData.routingMode = defaultsForTunnelProfile(
+                updateData.tunnelProfile
+            ).routingMode;
+        }
 
         const updatedSite = await db
             .update(sites)
             .set(updateData)
             .where(eq(sites.siteId, siteId))
             .returning();
+
+        // Refresh Gerbil peer AllowedIPs when routing mode / profile changes
+        if (
+            updatedSite[0] &&
+            existingSite.type === "wireguard" &&
+            existingSite.pubKey &&
+            existingSite.exitNodeId &&
+            (updateData.routingMode !== undefined ||
+                updateData.tunnelProfile !== undefined)
+        ) {
+            try {
+                const base = await getAllowedIps(siteId);
+                const withSubnet = existingSite.subnet
+                    ? [existingSite.subnet, ...base]
+                    : base;
+                const allowedIps = applyRoutingModeToAllowedIps(
+                    withSubnet,
+                    updatedSite[0].routingMode as
+                        | "full-tunnel"
+                        | "selective"
+                        | null
+                );
+                await addPeer(existingSite.exitNodeId, {
+                    publicKey: existingSite.pubKey,
+                    allowedIps
+                });
+                logger.info(
+                    `Updated WireGuard peer allowedIps for site ${siteId} (routingMode=${updatedSite[0].routingMode})`
+                );
+            } catch (err) {
+                logger.warn(
+                    `Failed to refresh Gerbil peer for site ${siteId}: ${err}`
+                );
+            }
+        }
 
         if (updatedSite.length === 0) {
             return next(

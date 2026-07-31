@@ -131,6 +131,8 @@ function querySitesBase() {
             orgName: orgs.name,
             type: sites.type,
             online: sites.online,
+            routingMode: sites.routingMode,
+            tunnelProfile: sites.tunnelProfile,
             address: sites.address,
             newtVersion: newts.version,
             exitNodeId: sites.exitNodeId,

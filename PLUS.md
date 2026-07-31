@@ -159,3 +159,149 @@ Pangolin OSS is the self-host identity-aware edge (proxy + WireGuard + Badger). 
 - ✅ Baseline lockfile from 1.21.1 install: green
 - ⚠️ Patch bumps available (next 16.2.11→16.2.12, axios, etc.) — **not applied** (peer resolve fail)
 - 🔴 Major bumps: not evaluated for apply
+
+## App-plus lap 2 (2026-07-31) — tunnel redesign + full research census
+
+### Tunnel types redesign (from old `ebfc963`)
+
+**Problem with the old port:** site `type` was overloaded with UX labels
+(`secure-vpn` / `split-tunnel` / `privacy-gateway`) then coerced back to
+`wireguard`. That breaks 1.21 assumptions (`sites.type` is only
+`newt | wireguard | local`) and dropped `remoteSubnets` entirely in modern schema.
+
+**New model** (`server/lib/tunnels/tunnelProfiles.ts`):
+
+| Layer | Field | Values |
+|-------|-------|--------|
+| Transport | `sites.type` | `newt` \| `wireguard` \| `local` (unchanged) |
+| Intent | `sites.tunnelProfile` | `standard` \| `secure-vpn` \| `split-tunnel` \| `privacy-gateway` |
+| Routing | `sites.routingMode` | `selective` (default, targets only) \| `full-tunnel` (+ `0.0.0.0/0`) |
+
+Profile → routing defaults:
+- `secure-vpn` → full-tunnel
+- `split-tunnel` → selective
+- `privacy-gateway` → full-tunnel (UI copy points at edge ODoH/DNS; deploy notes in `deploy/odoh-wireguard-dns-notes.md`)
+- `standard` → selective
+
+**Code paths:**
+- Schema + migration `1.21.2` (sqlite + pg)
+- `createSite` / `updateSite` / `listSites`
+- `gerbil/getConfig` + target create/update peer refresh
+- Create-site UI tunnel profile select + SitesTable badge
+- Pure unit test `server/lib/tunnels/tunnelProfiles.test.ts`
+
+---
+
+### Research census (this lap)
+
+#### Open issues (20) — status vs plus
+
+| # | Title | Plus status |
+|---|-------|-------------|
+| 3501 | Not able to connect to private Host | open / needs env |
+| **3480** | Language error first enter | ✅ **#3509** applied lap1 |
+| 3478 | Android connection failing | open / client |
+| 3471 | IPv6 ISP mobile | open / network |
+| **3458** | HTTP Request logs mix up rows | ✅ **#3459** applied lap1 |
+| 3433 | Newt WG handshake after 1.20 | open / needs investigating |
+| **3432** | country is not multi-country | ✅ **#3474** applied lap1 |
+| 3430 | Android add user 0.20 | stale |
+| 3428 | RDP Azure AD CredSSP | open / EE surface |
+| 3360 | Domain optional in config | enhancement deferred |
+| 3359 | Pass credentials via RDP | enhancement deferred |
+| 3355 | Private HTTP Windows client | open |
+| 3354 | Gerbil 0 proxy mappings 502 | open |
+| **3335** | OIDC open redirect | ✅ `isSafePostAuthRedirect` lap1 |
+| 3334 | /v1 API 404 | open / config |
+| 3274 | Auto launch clients | feature deferred |
+| 3272 | Browser RDP GNOME/Windows | open |
+| 3271 | SSH key passphrase | enhancement deferred |
+| 3255 | CredSSP InvalidToken | stale |
+| 3254 | Shared policy rules order | enhancement deferred |
+
+#### Closed issues (20) — sample of recent
+
+Most COMPLETED by upstream (1.20–1.21): #3484, #3462, #3442, #3439, #3435, #3429, #3427, #3424, #3408, #3395, #3393, #3387, #3383, #3374, #3365, #3357.  
+NOT_PLANNED kept for awareness: #3475 proxy chain POST, #3455 Olm hole punch org switch, #3444 health check collision, #3372 Android VPN under load.
+
+#### Open PRs (20) — status vs plus
+
+| # | Title | Plus status |
+|---|-------|-------------|
+| **3510** | site-resource lookup | ✅ lap1 |
+| **3509** | regional locale | ✅ lap1 |
+| 3506–3502 | docker/npm bumps | ⏭ dep policy |
+| 3500 / 3481 | i18n | ⏭ |
+| 3490 | npm-deps mega | ⏭ |
+| **3474** | multi-country policy | ✅ lap1 |
+| **3459** | audit log ordering | ✅ lap1 |
+| 3448 | sqlite index parity | large, deferred |
+| **3445** | stripDuplicateSessions | ✅ lap1 |
+| **3443** | audit filter optimize | ✅ lap1 |
+| 3384 | IdP validation | ⏭ already `idpExistsForOrg` |
+| 3368 | test runner CI | ⏭ harness |
+| **3199** | cert UNIQUE | ✅ lap1 |
+| **3191** | traefik perf | ✅ lap1 |
+| 3172 | response headers | feature, deferred |
+| 3169 | in-app docs | conflict |
+| 3160 | audit facet cache | conflicts with #3459 |
+
+#### Closed unmerged PRs (20) — highlights
+
+| # | Title | Plus status |
+|---|-------|-------------|
+| **3411** | SSO redirect after expiry | ✅ lap1 ⚡ |
+| **3278** | Remote-Groups header | ✅ lap1 ⚡ |
+| 3461 | resource rule validation | conflict / closed |
+| rest | Crowdin / dependabot noise | skipped |
+
+#### Branches (20 of 23 heads; dependabot excluded)
+
+| Branch | PR | State | Note |
+|--------|-----|-------|------|
+| aig | — | none | no PR |
+| backhaul | — | none | tunnel-related name; deep look later |
+| cicd | — | none | |
+| delete-account | — | none | |
+| dev | #3505 | MERGED | = 1.21.1 tip |
+| exit-node-reconnect | — | none | tunnel-related |
+| feat/command-palette | #3188 | CLOSED | landed via 1.20 product |
+| feat/remember-last-idp… | #3394 | MERGED | |
+| fix/labels-dropdown-flicker | #3468 | MERGED | in 1.21.1 |
+| fix/non-semver-version-error | #3407 | MERGED | |
+| main | — | | release line |
+| msg-delivery | — | none | |
+| org-only-idp | — | none | related to IdP scoping |
+| patch | — | none | |
+| private-resource-page | — | none | |
+| refactor/batch-status-requests | #3469 | MERGED | in 1.21.1 |
+| resource-launcher | #3380 | MERGED | product in 1.20 |
+| site-targets-auto-login | — | none | |
+| ssh | — | none | EE surface |
+
+**Branch mine boundary:** remote has **23 heads** total (4 dependabot). 19 non-bot listed above. No medium/large unmerged branch diffs adopted this lap (most value already in merged 1.20/1.21 product work). `backhaul` / `exit-node-reconnect` flagged for a future tunnel pass.
+
+---
+
+### Solved map (all plus work so far)
+
+| Plus deliverable | Upstream issue/PR |
+|------------------|-------------------|
+| PEM cert upload | #3243 (enhancement BYOC) |
+| stripDuplicateSessions | #3445, class of #2238 |
+| Audit log ordering | #3459 / #3458 |
+| Audit filter 6→1 | #3443 |
+| Site-resource API | #3510 / #2743 |
+| Multi-country geoblock | #3474 / #3432 |
+| Cert UNIQUE upsert | #3199 / #2937 |
+| Traefik hot-path | #3191 |
+| Locale detection | #3509 / #3480 |
+| SSO resource redirect | #3411 / #3001 |
+| Badger Remote-Groups | #3278 |
+| OIDC open redirect | #3335 |
+| Tunnel profiles redesign | old 88plug `ebfc963` (not upstream) |
+
+### Verify (lap 2)
+
+- `npx tsc --noEmit` → exit 0
+- `npx tsx server/lib/tunnels/tunnelProfiles.test.ts` → pass
