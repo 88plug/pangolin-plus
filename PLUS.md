@@ -305,3 +305,30 @@ NOT_PLANNED kept for awareness: #3475 proxy chain POST, #3455 Olm hole punch org
 
 - `npx tsc --noEmit` → exit 0
 - `npx tsx server/lib/tunnels/tunnelProfiles.test.ts` → pass
+
+## App-plus lap 3 (2026-07-31) — general page + branch deep-look
+
+### Site general settings: edit tunnel profile
+
+Existing WireGuard sites can now change `tunnelProfile` + `routingMode` under
+**Settings → Site → General** (not only at create time).
+
+- UI: `src/app/[orgId]/settings/sites/[niceId]/general/page.tsx`
+- Save posts to existing `POST /site/:siteId` (updateSite already refreshes Gerbil peer AllowedIPs)
+- Profile change auto-syncs routingMode defaults (secure-vpn/privacy-gateway → full-tunnel)
+
+### Branch deep-look results
+
+| Branch | Ahead of merge-base with 1.21.1 | Action |
+|--------|----------------------------------|--------|
+| `backhaul` | **0 commits** | Fully absorbed / abandoned tip — nothing to mine |
+| `exit-node-reconnect` | 2 commits | OSS `getOlmToken` fallback **already in 1.21.1**; EE `exitNodeReconnectScheduler` **already present** in tree under `server/private/routers/remoteExitNode/` |
+| `org-only-idp` | 0 | Absorbed (see `idpExistsForOrg`) |
+| `site-targets-auto-login` | 0 | Absorbed |
+
+**Conclusion:** flagged tunnel-related branches had no new portable delta beyond what 1.21.1 + prior plus already contain. No silent skip — boundary documented.
+
+### Verify
+
+- `npx tsc --noEmit` → exit 0
+- `tunnelProfiles.test.ts` → pass
