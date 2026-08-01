@@ -7,9 +7,9 @@ repos (and any useful fork PRs), apply plus deltas here, and build one distribut
 | Component | Upstream | Base tag | Plus status |
 |-----------|----------|----------|-------------|
 | **newt/** | [fosrl/newt](https://github.com/fosrl/newt) | **1.15.0** | **Mined** — registration chain, reconnect WgData, healthcheck races, TLS ConnectionState, prefer-local-routes default |
-| **gerbil/** | [fosrl/gerbil](https://github.com/fosrl/gerbil) | **1.4.3** | Vendored baseline — mine next |
-| **olm/** | [fosrl/olm](https://github.com/fosrl/olm) | **1.8.1** | Vendored baseline — mine next |
-| **badger/** | [fosrl/badger](https://github.com/fosrl/badger) | **v1.5.0** | Vendored baseline — mine next |
+| **gerbil/** | [fosrl/gerbil](https://github.com/fosrl/gerbil) | **1.4.3** | **Mined** — remoteConfigURL sanitize, Stop stopOnce |
+| **olm/** | [fosrl/olm](https://github.com/fosrl/olm) | **1.8.1** | **Mined** — always re-register on WS reconnect |
+| **badger/** | [fosrl/badger](https://github.com/fosrl/badger) | **v1.5.0** | **Mined** — trusted-hop real-IP headers + unit tests |
 | *(server root)* | [fosrl/pangolin](https://github.com/fosrl/pangolin) | **1.21.1** | **Mined** — see [PANGOLIN_PLUS.md](../PANGOLIN_PLUS.md) |
 
 Nested `.git` dirs are removed so history is the single `claude/pangolin-plus` branch.
