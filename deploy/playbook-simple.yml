@@ -74,6 +74,7 @@
         - { p: tcp, port: 80 }
         - { p: tcp, port: 443 }
         - { p: udp, port: 51820 }
+        - { p: udp, port: 21820 }
       register: fw
 
     - name: Save firewall
@@ -118,7 +119,7 @@
         content: |
           services:
             pangolin:
-              image: {{ pangolin_image }}
+              image: "{{ pangolin_image }}"
               container_name: pangolin
               restart: unless-stopped
               volumes:
@@ -130,7 +131,7 @@
                 retries: 15
 
             gerbil:
-              image: {{ gerbil_image }}
+              image: "{{ gerbil_image }}"
               container_name: gerbil
               restart: unless-stopped
               depends_on:
@@ -139,8 +140,7 @@
               command:
                 - --reachableAt=http://gerbil:3004
                 - --generateAndSaveKeyTo=/var/config/key
-                - --remoteConfig=http://pangolin:3001/api/v1/gerbil/get-config
-                - --reportBandwidthTo=http://pangolin:3001/api/v1/gerbil/receive-bandwidth
+                - --remoteConfig=http://pangolin:3001/api/v1/
               volumes:
                 - ./config:/var/config
               cap_add:
@@ -148,6 +148,7 @@
                 - SYS_MODULE
               ports:
                 - "51820:51820/udp"
+                - "21820:21820/udp"
                 - "443:443"
                 - "80:80"
 
@@ -212,7 +213,7 @@
             plugins:
               badger:
                 moduleName: "github.com/fosrl/badger"
-                version: "v1.2.0"
+                version: "v1.5.0"
           log:
             level: "INFO"
           certificatesResolvers:
@@ -279,6 +280,39 @@
       register: dynamic_cfg
 
     # === Container Management ===
+    - name: Validate image vars
+      assert:
+        that:
+          - image_registry | length > 0
+          - image_tag | length > 0
+          - pangolin_image | length > 0
+          - gerbil_image | length > 0
+        fail_msg: "image_registry, image_tag, pangolin_image, gerbil_image must be non-empty"
+
+    - name: Reject Hub pull of local-only plus registry name
+      assert:
+        that:
+          - not (pull_images | bool) or (image_registry != 'pangolin-plus')
+        fail_msg: >-
+          pull_images=true requires a real registry (ghcr.io/... or fosrl/* images),
+          not the local-only default image_registry=pangolin-plus
+
+    - name: Preflight local images present when not pulling
+      when: not (pull_images | bool)
+      block:
+        - name: Inspect local plus images
+          command: docker image inspect {{ pangolin_image }} {{ gerbil_image }}
+          register: image_preflight
+          changed_when: false
+          failed_when: false
+        - name: Fail if local images missing
+          when: image_preflight.rc != 0
+          fail:
+            msg: >-
+              Images {{ pangolin_image }} / {{ gerbil_image }} not found on this host.
+              Run `make plus-images` and load/transfer them, or set pull_images=true
+              with registry images (e.g. fosrl/pangolin:1.21.1).
+
     - name: Pull images
       when: pull_images | bool
       command: docker compose pull

@@ -76,10 +76,15 @@ pull_images: true
 |-----------|---------------|------------|
 | **newt** | Each **site** host | `make -C components/newt local` → `bin/newt` |
 | **olm** | End-user devices | `make -C components/olm local` → `bin/olm` |
-| **badger** | Traefik localPlugins | Pre-cloned in playbook; or `components/badger` from monorepo |
+| **badger** | Traefik localPlugins | `pangolin.yml` copies monorepo `components/badger` when present; else clones **fosrl/badger v1.5.0**. Simple playbooks pin catalog plugin **v1.5.0**. |
 
 You only get plus newt/olm fixes when those hosts run binaries built from this tree.
 
+### Preflight
+
+When `pull_images: false` (default), playbooks `docker image inspect` `pangolin_image` and `gerbil_image` before `compose up`. Missing images fail with a pointer to `make plus-images` / load. Health wait no longer ignores errors.
+
+`pull_images: true` with `image_registry: pangolin-plus` is rejected (avoids accidental Docker Hub pull of a local-only name).
 ## PEM upload in the dashboard
 
 pangolin-plus adds **Domain → Custom Certificate** so you can paste Origin PEMs after install instead of only at Ansible time. Files land under `traefik.certificates_path`.

@@ -189,10 +189,23 @@
         - "{{ pangolin_dir }}/plugins-local/src/github.com/fosrl"
         - "{{ pangolin_dir }}/letsencrypt"
 
-    - name: Pre-download Badger plugin for local loading
+    # Prefer monorepo plus badger (mined v1.5.0 + real-IP); else fosrl tag v1.5.0.
+    - name: Check for monorepo badger source
+      local_action: stat path={{ playbook_dir }}/../components/badger/go.mod
+      register: monorepo_badger
+      become: false
+
+    - name: Install Badger plugin from monorepo
+      when: monorepo_badger.stat.exists
+      copy:
+        src: "{{ playbook_dir }}/../components/badger/"
+        dest: "{{ pangolin_dir }}/plugins-local/src/github.com/fosrl/badger/"
+
+    - name: Pre-download Badger plugin from fosrl v1.5.0
+      when: not monorepo_badger.stat.exists
       shell: |
         cd {{ pangolin_dir }}/plugins-local/src/github.com/fosrl
-        git clone --depth 1 --branch v1.2.0 https://github.com/fosrl/badger.git
+        git clone --depth 1 --branch v1.5.0 https://github.com/fosrl/badger.git
       args:
         creates: "{{ pangolin_dir }}/plugins-local/src/github.com/fosrl/badger/go.mod"
 
@@ -224,7 +237,7 @@
         content: |
           services:
             pangolin:
-              image: {{ pangolin_image }}
+              image: "{{ pangolin_image }}"
               container_name: pangolin
               restart: unless-stopped
               networks:
@@ -238,7 +251,7 @@
                 retries: 5
 
             gerbil:
-              image: {{ gerbil_image }}
+              image: "{{ gerbil_image }}"
               container_name: gerbil
               restart: unless-stopped
               networks:
@@ -546,6 +559,39 @@
                     - url: "http://pangolin:3000"
       notify: restart pangolin
 
+    - name: Validate image vars
+      assert:
+        that:
+          - image_registry | length > 0
+          - image_tag | length > 0
+          - pangolin_image | length > 0
+          - gerbil_image | length > 0
+        fail_msg: "image_registry, image_tag, pangolin_image, gerbil_image must be non-empty"
+
+    - name: Reject Hub pull of local-only plus registry name
+      assert:
+        that:
+          - not (pull_images | bool) or (image_registry != 'pangolin-plus')
+        fail_msg: >-
+          pull_images=true requires a real registry (e.g. ghcr.io/you/pangolin-plus
+          or fosrl/* image names), not the local-only default image_registry=pangolin-plus
+
+    - name: Preflight local images present when not pulling
+      when: not (pull_images | bool)
+      block:
+        - name: Inspect local plus images
+          command: docker image inspect {{ pangolin_image }} {{ gerbil_image }}
+          register: image_preflight
+          changed_when: false
+          failed_when: false
+        - name: Fail if local images missing
+          when: image_preflight.rc != 0
+          fail:
+            msg: >-
+              Images {{ pangolin_image }} / {{ gerbil_image }} not found on this host.
+              Run `make plus-images` and load/transfer them, or set pull_images=true
+              with registry images (e.g. fosrl/pangolin:1.21.1).
+
     - name: Pull Pangolin images
       when: pull_images | bool
       shell: cd {{ pangolin_dir }} && docker compose pull
@@ -559,7 +605,7 @@
       until: health.stdout == "healthy"
       retries: 30
       delay: 10
-      ignore_errors: true
+      # No ignore_errors: fail the play if never healthy (do not claim success)
 
     - name: Show setup URL
       debug:

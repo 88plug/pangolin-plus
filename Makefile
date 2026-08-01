@@ -534,18 +534,39 @@ clean:
 
 PLUS_REGISTRY ?= pangolin-plus
 PLUS_TAG ?= local
+# Source tags for retag-on-push (always built by plus-images defaults / compose)
+PLUS_LOCAL_REGISTRY ?= pangolin-plus
+PLUS_LOCAL_TAG ?= local
 # Optional versioned tag: make plus-images VERSION=1.21.1-plus
 VERSION ?=
+PLUS_BUILD_VERSION = $(if $(VERSION),$(VERSION),$(PLUS_TAG))
 
 .PHONY: components-test components-build \
 	newt-test newt-build gerbil-build olm-build badger-test \
 	plus-images plus-images-push plus-image-pangolin plus-image-gerbil \
-	plus-image-newt plus-image-olm
+	plus-image-newt plus-image-olm plus-check-vars plus-check-docker
+
+# Shared guards for image tags (empty / unsafe)
+define plus-assert-tag-vars
+	@if [ -z "$(PLUS_REGISTRY)" ]; then echo "Error: PLUS_REGISTRY is empty"; exit 1; fi
+	@if [ -z "$(PLUS_TAG)" ]; then echo "Error: PLUS_TAG is empty"; exit 1; fi
+	@case "$(PLUS_REGISTRY)$(PLUS_TAG)$(VERSION)" in \
+		*[\'\"\\\;\|\$$\`\ \	]*) echo "Error: PLUS_REGISTRY/PLUS_TAG/VERSION contains unsafe chars"; exit 1;; \
+	esac
+endef
+
+plus-check-vars:
+	$(plus-assert-tag-vars)
+
+plus-check-docker:
+	@command -v docker >/dev/null || { echo "Error: docker not found"; exit 1; }
+	@docker info >/dev/null 2>&1 || { echo "Error: docker daemon not reachable"; exit 1; }
 
 newt-test:
 	$(MAKE) -C components/newt test
 
 newt-build:
+	@mkdir -p components/newt/bin
 	$(MAKE) -C components/newt local
 	@echo "→ components/newt/bin/newt"
 
@@ -555,6 +576,7 @@ gerbil-build:
 	@echo "→ components/gerbil/bin/gerbil"
 
 olm-build:
+	@mkdir -p components/olm/bin
 	$(MAKE) -C components/olm local
 	@echo "→ components/olm/bin/olm"
 
@@ -564,6 +586,9 @@ badger-test:
 # Local binaries for newt (site), gerbil (edge), olm (user client).
 # badger: plugin only — no binary target here (see badger-test).
 components-build: newt-build gerbil-build olm-build
+	@test -x components/newt/bin/newt
+	@test -x components/gerbil/bin/gerbil
+	@test -x components/olm/bin/olm
 	@echo ""
 	@echo "components-build done:"
 	@echo "  components/newt/bin/newt"
@@ -580,33 +605,42 @@ components-test: newt-test badger-test
 # Tags: $(PLUS_REGISTRY)/{pangolin,gerbil,newt,olm}:$(PLUS_TAG)
 # Defaults: pangolin-plus/*:local  (matches compose.plus.yaml)
 
-plus-image-pangolin:
+plus-image-pangolin: plus-check-vars plus-check-docker
 	docker build \
 		--build-arg BUILD=oss \
 		--build-arg DATABASE=sqlite \
-		-t $(PLUS_REGISTRY)/pangolin:$(PLUS_TAG) \
-		$(if $(VERSION),-t $(PLUS_REGISTRY)/pangolin:$(VERSION),) \
+		--build-arg VERSION="$(PLUS_BUILD_VERSION)" \
+		-t "$(PLUS_REGISTRY)/pangolin:$(PLUS_TAG)" \
+		$(if $(VERSION),-t "$(PLUS_REGISTRY)/pangolin:$(VERSION)",) \
 		-f Dockerfile .
 
-plus-image-gerbil:
+plus-image-gerbil: plus-check-vars plus-check-docker
 	docker build \
-		-t $(PLUS_REGISTRY)/gerbil:$(PLUS_TAG) \
-		$(if $(VERSION),-t $(PLUS_REGISTRY)/gerbil:$(VERSION),) \
+		-t "$(PLUS_REGISTRY)/gerbil:$(PLUS_TAG)" \
+		$(if $(VERSION),-t "$(PLUS_REGISTRY)/gerbil:$(VERSION)",) \
 		-f components/gerbil/Dockerfile components/gerbil
 
-plus-image-newt:
+plus-image-newt: plus-check-vars plus-check-docker
 	docker build \
-		-t $(PLUS_REGISTRY)/newt:$(PLUS_TAG) \
-		$(if $(VERSION),-t $(PLUS_REGISTRY)/newt:$(VERSION),) \
+		--build-arg VERSION="$(PLUS_BUILD_VERSION)" \
+		-t "$(PLUS_REGISTRY)/newt:$(PLUS_TAG)" \
+		$(if $(VERSION),-t "$(PLUS_REGISTRY)/newt:$(VERSION)",) \
 		-f components/newt/Dockerfile components/newt
 
-plus-image-olm:
+plus-image-olm: plus-check-vars plus-check-docker
 	docker build \
-		-t $(PLUS_REGISTRY)/olm:$(PLUS_TAG) \
-		$(if $(VERSION),-t $(PLUS_REGISTRY)/olm:$(VERSION),) \
+		--build-arg VERSION="$(PLUS_BUILD_VERSION)" \
+		-t "$(PLUS_REGISTRY)/olm:$(PLUS_TAG)" \
+		$(if $(VERSION),-t "$(PLUS_REGISTRY)/olm:$(VERSION)",) \
 		-f components/olm/Dockerfile components/olm
 
 plus-images: plus-image-pangolin plus-image-gerbil plus-image-newt plus-image-olm
+	@docker image inspect \
+		"$(PLUS_REGISTRY)/pangolin:$(PLUS_TAG)" \
+		"$(PLUS_REGISTRY)/gerbil:$(PLUS_TAG)" \
+		"$(PLUS_REGISTRY)/newt:$(PLUS_TAG)" \
+		"$(PLUS_REGISTRY)/olm:$(PLUS_TAG)" \
+		>/dev/null
 	@echo ""
 	@echo "plus-images tagged under $(PLUS_REGISTRY)/*:$(PLUS_TAG)"
 	@echo "  (badger is a Traefik plugin — use components/badger as localPlugins source)"
@@ -614,22 +648,45 @@ plus-images: plus-image-pangolin plus-image-gerbil plus-image-newt plus-image-ol
 	@echo "Lab newt:  docker compose -f compose.plus.yaml --profile lab up -d"
 
 # Optional: push to a registry you control. Does NOT default to GHCR.
-# Example:
-#   make plus-images plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus PLUS_TAG=local
-plus-images-push:
-	@if [ "$(PLUS_REGISTRY)" = "pangolin-plus" ]; then \
+# Retags from PLUS_LOCAL_REGISTRY/*:PLUS_LOCAL_TAG (default pangolin-plus/*:local)
+# when PLUS_REGISTRY/PLUS_TAG differ, so split build/push invocations work:
+#   make plus-images
+#   make plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus PLUS_TAG=local
+plus-images-push: plus-check-vars plus-check-docker
+	@if [ -z "$(PLUS_REGISTRY)" ] || [ "$(PLUS_REGISTRY)" = "pangolin-plus" ]; then \
 		echo "Error: set PLUS_REGISTRY to a real registry (e.g. ghcr.io/you/pangolin-plus)"; \
 		echo "  make plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus PLUS_TAG=local"; \
 		exit 1; \
 	fi
-	docker push $(PLUS_REGISTRY)/pangolin:$(PLUS_TAG)
-	docker push $(PLUS_REGISTRY)/gerbil:$(PLUS_TAG)
-	docker push $(PLUS_REGISTRY)/newt:$(PLUS_TAG)
-	docker push $(PLUS_REGISTRY)/olm:$(PLUS_TAG)
+	@case "$(PLUS_REGISTRY)" in \
+		fosrl|fosrl/*|docker.io/fosrl|docker.io/fosrl/*) \
+			echo "Error: refuse push to upstream fosrl namespace"; exit 1;; \
+	esac
+	@# Prefer images already tagged for the push dest; else retag from local defaults
+	@for name in pangolin gerbil newt olm; do \
+		src="$(PLUS_LOCAL_REGISTRY)/$$name:$(PLUS_LOCAL_TAG)"; \
+		dst="$(PLUS_REGISTRY)/$$name:$(PLUS_TAG)"; \
+		if docker image inspect "$$dst" >/dev/null 2>&1; then \
+			: ; \
+		elif docker image inspect "$$src" >/dev/null 2>&1; then \
+			echo "retag $$src -> $$dst"; \
+			docker tag "$$src" "$$dst"; \
+		else \
+			echo "Error: missing image $$dst (and no $$src to retag from). Run: make plus-images"; \
+			exit 1; \
+		fi; \
+		if [ -n "$(VERSION)" ]; then \
+			docker tag "$$dst" "$(PLUS_REGISTRY)/$$name:$(VERSION)"; \
+		fi; \
+	done
+	docker push "$(PLUS_REGISTRY)/pangolin:$(PLUS_TAG)"
+	docker push "$(PLUS_REGISTRY)/gerbil:$(PLUS_TAG)"
+	docker push "$(PLUS_REGISTRY)/newt:$(PLUS_TAG)"
+	docker push "$(PLUS_REGISTRY)/olm:$(PLUS_TAG)"
 	@if [ -n "$(VERSION)" ]; then \
-		docker push $(PLUS_REGISTRY)/pangolin:$(VERSION); \
-		docker push $(PLUS_REGISTRY)/gerbil:$(VERSION); \
-		docker push $(PLUS_REGISTRY)/newt:$(VERSION); \
-		docker push $(PLUS_REGISTRY)/olm:$(VERSION); \
+		docker push "$(PLUS_REGISTRY)/pangolin:$(VERSION)"; \
+		docker push "$(PLUS_REGISTRY)/gerbil:$(VERSION)"; \
+		docker push "$(PLUS_REGISTRY)/newt:$(VERSION)"; \
+		docker push "$(PLUS_REGISTRY)/olm:$(VERSION)"; \
 	fi
 	@echo "plus-images-push: pushed $(PLUS_REGISTRY)/*:$(PLUS_TAG)"

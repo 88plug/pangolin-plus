@@ -28,7 +28,7 @@ services:
       args:
         BUILD: oss
         DATABASE: sqlite
-    image: pangolin-plus/pangolin:local
+    image: ${PANGOLIN_IMAGE:-pangolin-plus/pangolin:local}
     container_name: pangolin
     restart: unless-stopped
     volumes:
@@ -43,7 +43,7 @@ services:
     build:
       context: ./components/gerbil
       dockerfile: Dockerfile
-    image: pangolin-plus/gerbil:local
+    image: ${GERBIL_IMAGE:-pangolin-plus/gerbil:local}
     container_name: gerbil
     restart: unless-stopped
     depends_on:
@@ -79,7 +79,8 @@ services:
       - ./config/letsencrypt:/letsencrypt
 
   # Optional lab site connector built from this monorepo (plus newt deltas).
-  # Requires NEWT_ID + NEWT_SECRET from the dashboard (Sites → Newt credentials).
+  # Fail-closed: container exits immediately if NEWT_ID/NEWT_SECRET are empty
+  # (Compose cannot use ${VAR:?} here — it interpolates even when profile is off).
   #   export NEWT_ID=... NEWT_SECRET=...
   #   docker compose -f compose.plus.yaml --profile lab up -d
   # Production: install the binary on each site host instead of this service:
@@ -89,7 +90,7 @@ services:
     build:
       context: ./components/newt
       dockerfile: Dockerfile
-    image: pangolin-plus/newt:local
+    image: ${NEWT_IMAGE:-pangolin-plus/newt:local}
     container_name: newt-lab
     restart: unless-stopped
     depends_on:
@@ -101,9 +102,19 @@ services:
       NEWT_ID: ${NEWT_ID:-}
       NEWT_SECRET: ${NEWT_SECRET:-}
       NEWT_PREFER_LOCAL_ROUTES: ${NEWT_PREFER_LOCAL_ROUTES:-true}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ -z "$$NEWT_ID" ] || [ -z "$$NEWT_SECRET" ]; then
+          echo "Error: profile lab requires NEWT_ID and NEWT_SECRET (Sites credentials)" >&2
+          exit 1
+        fi
+        exec /entrypoint.sh newt
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
+    devices:
+      - /dev/net/tun:/dev/net/tun
 
 networks:
   default:
