@@ -326,13 +326,15 @@
           - gerbil_image | length > 0
         fail_msg: "image_registry, image_tag, pangolin_image, gerbil_image must be non-empty"
 
-    - name: Reject Hub pull of local-only plus registry name
+    - name: Reject Hub pull of local-only pangolin-plus/* image names
       assert:
         that:
-          - not (pull_images | bool) or (image_registry != 'pangolin-plus')
+          - not (pull_images | bool) or not (pangolin_image is match('^pangolin-plus/'))
+          - not (pull_images | bool) or not (gerbil_image is match('^pangolin-plus/'))
         fail_msg: >-
-          pull_images=true requires a real registry (ghcr.io/... or fosrl/* images),
-          not the local-only default image_registry=pangolin-plus
+          pull_images=true cannot use local-only image names (pangolin-plus/*).
+          Use ghcr.io/... tags after make plus-images-push, or fosrl/* stock images
+          (image_registry may stay default when overriding pangolin_image/gerbil_image).
 
     - name: Preflight local images present when not pulling
       when: not (pull_images | bool)
