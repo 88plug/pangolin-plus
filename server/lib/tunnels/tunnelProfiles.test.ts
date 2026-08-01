@@ -37,7 +37,8 @@ const full = applyRoutingModeToAllowedIps(
     ["10.0.0.1/32"],
     "full-tunnel"
 );
-assertEquals(full.includes("0.0.0.0/0"), true, "full-tunnel has default route");
+assertEquals(full.includes("0.0.0.0/0"), true, "full-tunnel has IPv4 default");
+assertEquals(full.includes("::/0"), true, "full-tunnel has IPv6 default");
 assertEquals(full.includes("10.0.0.1/32"), true, "full-tunnel keeps subnet");
 
 // dedupe

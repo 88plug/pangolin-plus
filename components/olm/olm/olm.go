@@ -572,12 +572,10 @@ func (o *Olm) StartTunnel(config TunnelConfig) {
 
 		publicKey := o.privateKey.PublicKey()
 
-		// delay for 500ms to allow for time for the hp to get processed
-		time.Sleep(500 * time.Millisecond)
-
-		// Check again after sleep in case tunnel was stopped
-		if !o.tunnelRunning {
-			logger.Debug("Tunnel stopped during delay, skipping registration")
+		// Brief delay for hole-punch to process — interruptible so stop/flap
+		// does not stack blocking 500ms sleeps on every reconnect (plus: #123).
+		if !waitForHolePunchSettle(o.olmCtx, &o.tunnelRunning, 500*time.Millisecond) {
+			logger.Debug("Tunnel stopped or cancelled during delay, skipping registration")
 			return nil
 		}
 

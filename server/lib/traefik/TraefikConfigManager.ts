@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import { pathsForDomainRoot } from "@server/lib/certificates/localCertFs";
 import config from "@server/lib/config";
 import logger from "@server/logger";
 import * as yaml from "js-yaml";
@@ -131,11 +132,8 @@ export class TraefikConfigManager {
                 if (!dirent.isDirectory()) continue;
 
                 const domain = dirent.name;
-                const domainDir = path.join(certsPath, domain);
-                const certPath = path.join(domainDir, "cert.pem");
-                const keyPath = path.join(domainDir, "key.pem");
-                const lastUpdatePath = path.join(domainDir, ".last_update");
-                const wildcardPath = path.join(domainDir, ".wildcard");
+                const { domainDir, certPath, keyPath, lastUpdatePath, wildcardPath } =
+                    pathsForDomainRoot(certsPath, domain);
 
                 const certExists = await this.fileExists(certPath);
                 const keyExists = await this.fileExists(keyPath);
@@ -720,12 +718,10 @@ export class TraefikConfigManager {
             // First, try to find an exact match certificate
             const localState = this.lastLocalCertificateState.get(domain);
             if (localState && localState.exists) {
-                const domainDir = path.join(
+                const { certPath, keyPath } = pathsForDomainRoot(
                     config.getRawConfig().traefik.certificates_path,
                     domain
                 );
-                const certPath = path.join(domainDir, "cert.pem");
-                const keyPath = path.join(domainDir, "key.pem");
 
                 if (!addedCertPaths.has(certPath)) {
                     const certEntry = {
@@ -750,12 +746,10 @@ export class TraefikConfigManager {
                             domain.length - ("." + certDomain).length
                         );
                         if (!prefix.includes(".")) {
-                            const domainDir = path.join(
+                            const { certPath, keyPath } = pathsForDomainRoot(
                                 config.getRawConfig().traefik.certificates_path,
                                 certDomain
                             );
-                            const certPath = path.join(domainDir, "cert.pem");
-                            const keyPath = path.join(domainDir, "key.pem");
 
                             if (!addedCertPaths.has(certPath)) {
                                 const certEntry = {
@@ -830,15 +824,12 @@ export class TraefikConfigManager {
                     continue;
                 }
 
-                const domainDir = path.join(
-                    config.getRawConfig().traefik.certificates_path,
-                    cert.domain
-                );
+                const { domainDir, certPath, keyPath, lastUpdatePath, wildcardPath } =
+                    pathsForDomainRoot(
+                        config.getRawConfig().traefik.certificates_path,
+                        cert.domain
+                    );
                 await this.ensureDirectoryExists(domainDir);
-
-                const certPath = path.join(domainDir, "cert.pem");
-                const keyPath = path.join(domainDir, "key.pem");
-                const lastUpdatePath = path.join(domainDir, ".last_update");
 
                 // Check if we need to update the certificate
                 const shouldUpdate = await this.shouldUpdateCertificate(
@@ -868,7 +859,6 @@ export class TraefikConfigManager {
                     );
 
                     // Check if this is a wildcard certificate and store it
-                    const wildcardPath = path.join(domainDir, ".wildcard");
                     fs.writeFileSync(
                         wildcardPath,
                         cert.wildcard ? "true" : "false",
@@ -1066,7 +1056,11 @@ export class TraefikConfigManager {
                         // Grace period expired - actually delete now
                         this.pendingDeletion.delete(dirName);
 
-                        const domainDir = path.join(certsPath, dirName);
+                        const {
+                            domainDir,
+                            certPath: certFilePath,
+                            keyPath: keyFilePath
+                        } = pathsForDomainRoot(certsPath, dirName);
                         logger.info(
                             `Cleaning up unused certificate directory: ${dirName}`
                         );
@@ -1076,8 +1070,6 @@ export class TraefikConfigManager {
                         this.lastLocalCertificateState.delete(dirName);
 
                         // Remove from dynamic config
-                        const certFilePath = path.join(domainDir, "cert.pem");
-                        const keyFilePath = path.join(domainDir, "key.pem");
                         const before = dynamicConfig.tls.certificates.length;
                         dynamicConfig.tls.certificates =
                             dynamicConfig.tls.certificates.filter(

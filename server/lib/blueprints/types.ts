@@ -184,10 +184,9 @@ export const RuleSchema = z
         }
     );
 
-export const HeaderSchema = z.object({
-    name: z.string().min(1),
-    value: z.string().min(1)
-});
+// Canonical header validation (shared with resource API)
+import { HeaderSchema } from "@server/lib/headers/headerSchema";
+export { HeaderSchema };
 
 export const AuthDaemonSchema = z
     .object({

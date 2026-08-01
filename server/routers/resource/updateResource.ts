@@ -28,6 +28,10 @@ import { eq, and, ne } from "drizzle-orm";
 import response from "@server/lib/response";
 import HttpCode from "@server/types/HttpCode";
 import createHttpError from "http-errors";
+import {
+    HeaderSchema,
+    headersPassValidation
+} from "@server/lib/headers/headerSchema";
 import logger from "@server/logger";
 import { fromError } from "zod-validation-error";
 import config from "@server/lib/config";
@@ -100,15 +104,15 @@ const updateHttpResourceBodySchema = z
                 "When no shared resource policy is assigned (resourcePolicyId is null), updates the resource's inline policy. When a shared policy is assigned, this value overrides the shared policy for this resource."
             ),
         headers: z
-            .array(z.strictObject({ name: z.string(), value: z.string() }))
+            .array(HeaderSchema)
             .nullable()
             .optional(), // deprecated alias for requestHeaders
         requestHeaders: z
-            .array(z.strictObject({ name: z.string(), value: z.string() }))
+            .array(HeaderSchema)
             .nullable()
             .optional(),
         responseHeaders: z
-            .array(z.strictObject({ name: z.string(), value: z.string() }))
+            .array(HeaderSchema)
             .nullable()
             .optional(),
         // Maintenance mode fields
@@ -171,48 +175,15 @@ const updateHttpResourceBodySchema = z
     )
     .refine(
         (data) => {
-            const validHeaderName = /^[a-zA-Z0-9!#$%&'*+\-.^_`|~]+$/;
             const allHeaders = [
                 ...(data.headers ?? []),
                 ...(data.requestHeaders ?? []),
                 ...(data.responseHeaders ?? [])
             ];
-            return allHeaders.every((h) => validHeaderName.test(h.name));
+            return headersPassValidation(allHeaders);
         },
         {
-            error: "Header names may only contain valid HTTP token characters (letters, digits, and !#$%&'*+-.^_`|~)."
-        }
-    )
-    .refine(
-        (data) => {
-            const validHeaderValue = /^[\t\x20-\x7E]*$/;
-            const allHeaders = [
-                ...(data.headers ?? []),
-                ...(data.requestHeaders ?? []),
-                ...(data.responseHeaders ?? [])
-            ];
-            return allHeaders.every((h) => validHeaderValue.test(h.value));
-        },
-        {
-            error: "Header values may only contain printable ASCII characters and horizontal whitespace."
-        }
-    )
-    .refine(
-        (data) => {
-            const templatePattern = /\{\{[^}]+\}\}/;
-            const allHeaders = [
-                ...(data.headers ?? []),
-                ...(data.requestHeaders ?? []),
-                ...(data.responseHeaders ?? [])
-            ];
-            return allHeaders.every(
-                (h) =>
-                    !templatePattern.test(h.name) &&
-                    !templatePattern.test(h.value)
-            );
-        },
-        {
-            error: "Header names and values must not contain template expressions such as {{value}}."
+            error: "Invalid custom header name or value (token chars only; no templates; printable ASCII)."
         }
     );
 

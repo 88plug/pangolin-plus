@@ -1,8 +1,30 @@
 package olm
 
 import (
+	"context"
+	"time"
+
 	"github.com/fosrl/olm/peers"
 )
+
+// waitForHolePunchSettle waits up to d, returning false if ctx is cancelled
+// or tunnelRunning becomes false (interruptible alternative to time.Sleep).
+func waitForHolePunchSettle(ctx context.Context, tunnelRunning *bool, d time.Duration) bool {
+	if ctx == nil {
+		timer := time.NewTimer(d)
+		defer timer.Stop()
+		<-timer.C
+		return tunnelRunning != nil && *tunnelRunning
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return tunnelRunning != nil && *tunnelRunning
+	case <-ctx.Done():
+		return false
+	}
+}
 
 // slicesEqual compares two string slices for equality (order-independent)
 func slicesEqual(a, b []string) bool {

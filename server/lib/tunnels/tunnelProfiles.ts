@@ -5,8 +5,11 @@
  * sites.tunnelProfile is UX/intent metadata for WireGuard sites.
  * sites.routingMode drives Gerbil peer AllowedIPs:
  *   selective   → site subnet + resource target IPs (default)
- *   full-tunnel → above + 0.0.0.0/0
+ *   full-tunnel → above + 0.0.0.0/0 and ::/0 (dual-stack default route)
  */
+
+/** Default routes injected for full-tunnel (IPv4 + IPv6). */
+export const FULL_TUNNEL_DEFAULT_ROUTES = ["0.0.0.0/0", "::/0"] as const;
 import { z } from "zod";
 
 export const ROUTING_MODES = ["full-tunnel", "selective"] as const;
@@ -62,8 +65,10 @@ export function applyRoutingModeToAllowedIps(
     routingMode: RoutingMode | null | undefined
 ): string[] {
     const ips = [...new Set(baseAllowedIps.filter(Boolean))];
-    if (routingMode === "full-tunnel" && !ips.includes("0.0.0.0/0")) {
-        ips.push("0.0.0.0/0");
+    if (routingMode === "full-tunnel") {
+        for (const route of FULL_TUNNEL_DEFAULT_ROUTES) {
+            if (!ips.includes(route)) ips.push(route);
+        }
     }
     return ips;
 }

@@ -31,12 +31,12 @@ export function getCertificatesRoot(): string | null {
     return config.getRawConfig().traefik.certificates_path ?? null;
 }
 
-export function pathsForDomain(baseDomain: string): LocalCertPaths {
-    const root = getCertificatesRoot();
-    if (!root) {
-        throw new Error("traefik.certificates_path is not configured");
-    }
-    const domainDir = path.join(root, baseDomain);
+/** Build on-disk paths under an explicit certificates root (no config read). */
+export function pathsForDomainRoot(
+    certificatesRoot: string,
+    baseDomain: string
+): LocalCertPaths {
+    const domainDir = path.join(certificatesRoot, baseDomain);
     return {
         domainName: baseDomain,
         domainDir,
@@ -45,6 +45,14 @@ export function pathsForDomain(baseDomain: string): LocalCertPaths {
         lastUpdatePath: path.join(domainDir, ".last_update"),
         wildcardPath: path.join(domainDir, ".wildcard")
     };
+}
+
+export function pathsForDomain(baseDomain: string): LocalCertPaths {
+    const root = getCertificatesRoot();
+    if (!root) {
+        throw new Error("traefik.certificates_path is not configured");
+    }
+    return pathsForDomainRoot(root, baseDomain);
 }
 
 export type OrgDomainRow = {

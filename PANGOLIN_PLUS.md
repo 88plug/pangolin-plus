@@ -150,6 +150,15 @@ So pangolin-plus is:
 | Server WG | Tunnel profiles without fake `sites.type` |
 | Deploy | Ansible LE/CF Origin, troubleshooting |
 
+### Review deferred (closed)
+
+| Item | Resolution |
+|---|---|
+| full-tunnel IPv6 leak | `::/0` + `0.0.0.0/0` in `applyRoutingModeToAllowedIps` |
+| Header validation drift | Shared `server/lib/headers/headerSchema.ts` for API + blueprints |
+| Cert path dual implementation | `pathsForDomainRoot` used by upload + TraefikConfigManager |
+| Olm 500ms Sleep on reconnect | Interruptible `waitForHolePunchSettle` (ctx / tunnel stop) |
+
 ---
 
 ## Community features
