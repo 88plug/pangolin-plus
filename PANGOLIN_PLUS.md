@@ -29,7 +29,7 @@ So pangolin-plus is:
 
 ---
 
-## How we\'re different — at a glance
+## How we're different — at a glance
 
 ### Server (repo root · fosrl/pangolin 1.21.1)
 
