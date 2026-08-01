@@ -144,11 +144,12 @@ make plus-install-scripts-selftest
 # Optional full binary matrix:
 # make plus-release-binaries VERSION=1.21.1-plus
 
-# Optional dry_run before a real tag (checks out tag ref; loads amd64 images for smoke;
-# does not push GHCR / does not create a GitHub Release):
-#   Actions → Plus Release → workflow_dispatch
+# Optional dry_run before a real tag (builds the branch selected in Actions UI,
+# labels artifacts with the tag *string*; does not require the tag to exist;
+# loads amd64 images for smoke; does not push GHCR / does not create a Release):
+#   Actions → Plus Release → Run workflow → branch: main
 #     tag=v1.21.1-plus  dry_run=true
-#   Tag must already exist on the remote for checkout.
+#   or: gh workflow run "Plus Release" -f tag=v1.21.1-plus -f dry_run=true
 
 git tag v1.21.1-plus
 git push origin v1.21.1-plus
