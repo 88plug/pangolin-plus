@@ -51,9 +51,13 @@ So pangolin-plus is:
 | netstack TLS | No ConnectionState | **Forwarded** ([#357](https://github.com/fosrl/newt/pull/357) ⚡) |
 | LAN vs tunnel | PreferLocalRoutes off by default | **Default on** ([#414](https://github.com/fosrl/newt/pull/414) intent) |
 
-### Gerbil / Olm / Badger
+### Gerbil / Olm / Badger (mined in-tree)
 
-Vendored at current release tags for **one clone / one compose build**. Mining pass next (same app-plus procedure into these directories — not separate repos).
+| Component | Base | Plus status |
+|---|---|---|
+| Gerbil | 1.4.3 tree | **Mined** — URL sanitize + idempotent Stop |
+| Olm | 1.8.1 tree | **Mined** — always re-register on WS reconnect |
+| Badger | v1.5.0 tree | **Mined** — trusted-hop X-Real-IP / XFF chain + unit tests |
 
 ---
 
@@ -64,6 +68,9 @@ Vendored at current release tags for **one clone / one compose build**. Mining p
 
 **Newt (in-tree)**
 - Registration chain · reconnect WgData · healthcheck races · TLS ConnectionState · prefer-local-routes default true
+
+**Gerbil / Olm / Badger (in-tree)**
+- remoteConfigURL path sanitize (bandwidth 400s) · Stop() stopOnce · olm WS re-register · badger real-IP header chain
 
 **Distribution**
 - `compose.plus.yaml` builds pangolin + gerbil (and optional newt) from this monorepo
@@ -79,7 +86,7 @@ Vendored at current release tags for **one clone / one compose build**. Mining p
 |---|:--:|:--:|
 | Pangolin CE server 1.21.x | ✓ | ✓ + plus deltas |
 | Newt connector 1.15.x | ✓ (separate repo) | ✓ **in-tree + mined** |
-| Gerbil / Olm / Badger sources | separate | ✓ **vendored** |
+| Gerbil / Olm / Badger sources | separate | ✓ **in-tree + mined** |
 | PEM BYOC upload (OSS) | – | ✓ |
 | WG tunnel profiles | – | ✓ |
 | Newt reconnect/health correctness pack | open PRs | ✓ mined |
@@ -116,6 +123,25 @@ Vendored at current release tags for **one clone / one compose build**. Mining p
 | netstack | [#357](https://github.com/fosrl/newt/pull/357) ⚡ | TLS ConnectionState |
 | Routes | [#414](https://github.com/fosrl/newt/pull/414) ⚡ intent | PreferLocalRoutes default true |
 
+### Gerbil (fosrl/gerbil → components/gerbil)
+
+| Area | Upstream # | Fix |
+|---|---|---|
+| Bandwidth report 400 | [#106](https://github.com/fosrl/gerbil/pull/106) / [#82](https://github.com/fosrl/gerbil/issues/82) | Strip get-config / receive-bandwidth / trailing path from remoteConfigURL |
+| Double Stop panic | [#105](https://github.com/fosrl/gerbil/pull/105) / [#51](https://github.com/fosrl/gerbil/issues/51) | `stopOnce` around UDPProxyServer.Stop |
+
+### Olm (fosrl/olm → components/olm)
+
+| Area | Upstream # | Fix |
+|---|---|---|
+| Reconnect stuck unregistered | [#123](https://github.com/fosrl/olm/pull/123) ⚡ closed-unmerged | Always re-register on every WebSocket OnConnect |
+
+### Badger (fosrl/badger → components/badger)
+
+| Area | Upstream # / fork | Fix |
+|---|---|---|
+| Real client IP | [#5](https://github.com/fosrl/badger/pull/5) ⚡ / [#9](https://github.com/fosrl/badger/pull/9) ⚡ / `onno204` + `hhftechnology` forks | Trusted-hop CF → X-Real-IP → X-Forwarded-For; `firstValidIP`; unit tests |
+
 ### Own work (no clean ticket)
 
 | Area | What |
@@ -143,9 +169,72 @@ Vendored at current release tags for **one clone / one compose build**. Mining p
 
 **Newt:** 4 open PR ports + 1 closed-unmerged + 1 intent default. Skipped #324/#341 (stale/conflict), #355/#420/#403 (needs design).
 
-**Gerbil / Olm / Badger:** Not mined yet — trees vendored for the monorepo so the next pass is *into these directories*, not new repos.
+**Gerbil:** #106 + #105 ported. Skipped #95 (TTL cache already re-notifies ≤2.5s), large perf #75/#64/#65, websocket-relay #77, dep-only bumps.
 
-**Public forks of fosrl/pangolin:** No competing ahead-of-main maintained plus found (742 forks mostly mirrors). 88plug/pangolin remote is dead (thousands behind).
+**Olm:** #123 closed-unmerged ported. Skipped #124 (API 426 — DX nice-to-have), #115 systemd-resolved (needs platform design), large websocket-relay #112, dep bumps.
+
+**Badger:** closed #5/#9 + fork XFF logic ported + tests. Skipped open #24 large refactor, rebrand forks.
+
+### FORK GRAVEYARD (2026-07-31 app-plus pass)
+
+```
+FORK GRAVEYARD:
+  Network forks inventoried (paginated):
+    fosrl/pangolin 752  (API forks_count=742)
+    fosrl/newt       82
+    fosrl/gerbil     30
+    fosrl/olm        22
+    fosrl/badger     22
+  Compare method: gh compare main...owner:branch (owner:branch, not owner/repo)
+
+  Pangolin:
+    Starred + recent + known samples compared: ~40
+    Ahead of upstream (content candidates): 0
+    Identical/behind: all sampled (e.g. Arison99 behind 6813, 88plug behind 4478,
+      Adityakk9031/zkulle identical). No unique plus code on network forks.
+
+  Newt:
+    Full owner inventory compared
+    Small-tier ahead (1–4 commits): md-aamir-khan, playX18 (flake.nix hash only),
+      myInstagramAlternative (stale go.mod bumps) → SKIP-noise
+    Large ahead + behind≈759: diverged-old-base mirrors (mattv8 etc. recent commits
+      are upstream merge PRs) → large-tier named, not wholesale-merged
+    Ported from forks: 0 unique (value was already in open upstream PRs)
+
+  Gerbil:
+    Full inventory compared
+    Ahead candidates: hhftechnology ahead_by=1 (tailscale rewrite, removes relay/)
+      → SKIP-rebrand / alternate product
+    Ported from forks: 0 (companion open PRs instead)
+
+  Olm:
+    Full inventory compared
+    Ahead candidates: several large diverged (Lokowitz 277, water-sucks 255, …)
+      → large-tier deferred; no small thesis-aligned slice
+    Ported from forks: 0
+
+  Badger:
+    Full inventory compared
+    Small-tier:
+      onno204 (XFF) + hhftechnology (XFF+tests) → logic already ported from closed PRs;
+        tests adapted into main_test.go (fork provenance)
+      AstralDestiny → module rename noise SKIP
+      marcschaeferger-org → .deepsource.toml SKIP
+      Dervish12 → netflare rebrand SKIP
+    Ported into plus: XFF/real-IP behavior + tests (PR #5/#9 + fork corroboration)
+
+  Forks whose own issues/PRs/branches mined: onno204/hhftechnology (via closed PR
+    lineage); full per-fork issue trackers on 0-star mirrors not re-listed (no ahead code).
+```
+
+### ECOSYSTEM
+
+```
+ECOSYSTEM:
+  Companions mined into monorepo: fosrl/newt, gerbil, olm, badger
+  Separate plus products: none (newt-plus left as MOVED.md pointer only)
+  Survivors ported this pass: gerbil#106/#105, olm#123, badger#5/#9+forks
+```
 
 ---
 
@@ -185,7 +274,9 @@ docker compose -f compose.plus.yaml build
 | Server `tsc` | PASS |
 | Server `npm test` | 9/11 (openapi isolation pre-existing) |
 | Newt `make test` | PASS |
-| Newt `make local` | PASS |
+| Gerbil `go test ./...` | PASS |
+| Olm `go test ./...` | PASS |
+| Badger `go test ./...` | PASS (new IP unit tests) |
 
 ---
 

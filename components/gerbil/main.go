@@ -429,9 +429,15 @@ func main() {
 		logger.Fatal("You must provide either a config file or a remote config URL, not both")
 	}
 
-	// clean up the reomte config URL for backwards compatibility
+	// clean up the remote config URL for backwards compatibility
+	// Operators often paste the full receive-bandwidth or get-config URL; strip
+	// known suffixes so bandwidth reports hit /gerbil/receive-bandwidth once
+	// (fosrl/gerbil#106 / #82 — otherwise server returns 400 Bad Request).
+	remoteConfigURL = strings.TrimRight(remoteConfigURL, "/")
 	remoteConfigURL = strings.TrimSuffix(remoteConfigURL, "/gerbil/get-config")
-	remoteConfigURL = strings.TrimSuffix(remoteConfigURL, "/")
+	remoteConfigURL = strings.TrimSuffix(remoteConfigURL, "/gerbil/receive-bandwidth")
+	remoteConfigURL = strings.TrimSuffix(remoteConfigURL, "/gerbil")
+	remoteConfigURL = strings.TrimRight(remoteConfigURL, "/")
 
 	var key wgtypes.Key
 	// if generateAndSaveKeyTo is provided, generate a private key and save it to the file. if the file already exists, load the key from the file

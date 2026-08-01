@@ -555,18 +555,20 @@ func (o *Olm) StartTunnel(config TunnelConfig) {
 
 		o.apiServer.SetConnectionStatus(true)
 
-		if o.registered {
-			o.websocket.StartPingMonitor()
-
-			logger.Debug("Already registered, skipping registration")
-			return nil
-		}
-
 		// Check if tunnel is still running before starting registration
 		if !o.tunnelRunning {
 			logger.Debug("Tunnel is no longer running, skipping registration")
 			return nil
 		}
+
+		// Always re-register on WebSocket (re)connect. Skipping when o.registered
+		// leaves clients stuck "connected but not registered" after a server-side
+		// session teardown (fosrl/olm#123 closed-unmerged / pairs with gerbil#95).
+		if o.stopRegister != nil {
+			o.stopRegister()
+			o.stopRegister = nil
+		}
+		o.registered = false
 
 		publicKey := o.privateKey.PublicKey()
 
@@ -579,24 +581,22 @@ func (o *Olm) StartTunnel(config TunnelConfig) {
 			return nil
 		}
 
-		if o.stopRegister == nil {
-			logger.Debug("Sending registration message to server with public key: %s and relay: %v", publicKey, !config.Holepunch)
-			o.stopRegister, o.updateRegister = o.websocket.SendMessageInterval("olm/wg/register", map[string]any{
-				"publicKey":   publicKey.String(),
-				"relay":       !config.Holepunch,
-				"olmVersion":  o.olmConfig.Version,
-				"olmAgent":    o.olmConfig.Agent,
-				"orgId":       config.OrgID,
-				"userToken":   userToken,
-				"fingerprint": o.fingerprint,
-				"postures":    o.postures,
-				"chainId":     generateChainId(), // use a random chainId for registration updates - it won't be used for cancellation since registration is a one-time message but for tracking the session
-			}, 2*time.Second, 20) // after 18 tries on the server side we send the error so dont change this without changing that
+		logger.Debug("Sending registration message to server with public key: %s and relay: %v", publicKey, !config.Holepunch)
+		o.stopRegister, o.updateRegister = o.websocket.SendMessageInterval("olm/wg/register", map[string]any{
+			"publicKey":   publicKey.String(),
+			"relay":       !config.Holepunch,
+			"olmVersion":  o.olmConfig.Version,
+			"olmAgent":    o.olmConfig.Agent,
+			"orgId":       config.OrgID,
+			"userToken":   userToken,
+			"fingerprint": o.fingerprint,
+			"postures":    o.postures,
+			"chainId":     generateChainId(), // use a random chainId for registration updates - it won't be used for cancellation since registration is a one-time message but for tracking the session
+		}, 2*time.Second, 20) // after 18 tries on the server side we send the error so dont change this without changing that
 
-			// Invoke onRegistered callback if configured
-			if o.olmConfig.OnRegistered != nil {
-				go o.olmConfig.OnRegistered()
-			}
+		// Invoke onRegistered callback if configured
+		if o.olmConfig.OnRegistered != nil {
+			go o.olmConfig.OnRegistered()
 		}
 
 		return nil

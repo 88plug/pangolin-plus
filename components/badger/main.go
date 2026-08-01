@@ -427,17 +427,31 @@ func (p *Badger) getRealIP(req *http.Request) string {
 	// Check if request comes from a trusted source
 	isTrusted := p.isTrustedIP(req.RemoteAddr)
 
-	// If custom IP header is configured, use it
-	if p.customIPHeader != "" {
-		if customIP := req.Header.Get(p.customIPHeader); customIP != "" && isTrusted {
-			return customIP
+	// If custom IP header is configured, use it (from trusted hop only)
+	if p.customIPHeader != "" && isTrusted {
+		if customIP := req.Header.Get(p.customIPHeader); customIP != "" {
+			if ip := firstValidIP(customIP); ip != "" {
+				return ip
+			}
 		}
 	}
 
-	// Default: use CF-Connecting-IP if from trusted source
+	// Trusted hop: CF → X-Real-IP → X-Forwarded-For (fosrl/badger#5/#9 graveyard)
 	if isTrusted {
 		if cfIP := req.Header.Get(cfConnectingIP); cfIP != "" {
-			return cfIP
+			if ip := firstValidIP(cfIP); ip != "" {
+				return ip
+			}
+		}
+		if realIP := req.Header.Get(xRealIP); realIP != "" {
+			if ip := firstValidIP(realIP); ip != "" {
+				return ip
+			}
+		}
+		if forwardedFor := req.Header.Get(xForwardFor); forwardedFor != "" {
+			if ip := firstValidIP(forwardedFor); ip != "" {
+				return ip
+			}
 		}
 	}
 
@@ -448,6 +462,25 @@ func (p *Badger) getRealIP(req *http.Request) string {
 		return req.RemoteAddr
 	}
 	return ip
+}
+
+// firstValidIP returns the first parseable IP in a header value. Handles
+// comma-separated X-Forwarded-For lists ("client, proxy1, proxy2").
+func firstValidIP(headerValue string) string {
+	for _, part := range strings.Split(headerValue, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		// Strip optional port if present
+		if host, _, err := net.SplitHostPort(part); err == nil {
+			part = host
+		}
+		if net.ParseIP(part) != nil {
+			return part
+		}
+	}
+	return ""
 }
 
 func (p *Badger) stripSessionParam(req *http.Request) {
