@@ -50,6 +50,9 @@
     resync_badger: true
     # Required to switch off an on-disk plus deploy onto stock (fosrl/*) etc.
     force_demote: false
+    # Plus-family image prefix (local, docker.io local name, or published GHCR).
+    # Keep in sync with Makefile plus-guards-selftest plus_re.
+    plus_image_re: '^(docker\.io/|index\.docker\.io/|registry-1\.docker\.io/)?(pangolin-plus/|ghcr\.io/88plug/pangolin-plus/)'
 
     health_check_retries: 30
     health_check_delay: 10
@@ -94,12 +97,34 @@
       changed_when: false
       failed_when: false
 
+    - name: Read on-disk compose gerbil image
+      shell: |
+        set -e
+        f="{{ pangolin_dir }}/docker-compose.yml"
+        if [ ! -f "$f" ]; then echo "none"; exit 0; fi
+        awk '
+          /^[[:space:]]*gerbil:[[:space:]]*$/ { in_svc=1; next }
+          in_svc && /^[[:space:]]*[a-zA-Z0-9_-]+:[[:space:]]*$/ { in_svc=0 }
+          in_svc && /^[[:space:]]*image:[[:space:]]*/ {
+            sub(/^[[:space:]]*image:[[:space:]]*/, "")
+            gsub(/["\047]/, "")
+            print
+            exit
+          }
+        ' "$f"
+      args:
+        executable: /bin/bash
+      register: on_disk_gerbil
+      changed_when: false
+      failed_when: false
+
     - name: Display pre-upgrade status
       debug:
         msg: |
           Pre-upgrade status:
             Health: {{ pre_health.stdout }}
             On-disk pangolin image: {{ on_disk_pangolin.stdout | default('none') }}
+            On-disk gerbil image: {{ on_disk_gerbil.stdout | default('none') }}
             Target images: {{ pangolin_image }} / {{ gerbil_image }} / {{ traefik_image }}
             pull_images: {{ pull_images }}
             Current versions:
@@ -115,22 +140,31 @@
         that:
           - not (pull_images | bool) or not (pangolin_image is match('^pangolin-plus/'))
           - not (pull_images | bool) or not (gerbil_image is match('^pangolin-plus/'))
+          - not (pull_images | bool) or not (pangolin_image is match('^docker\.io/pangolin-plus/'))
+          - not (pull_images | bool) or not (gerbil_image is match('^docker\.io/pangolin-plus/'))
         fail_msg: >-
           pull_images=true cannot use local-only image names (pangolin-plus/*).
           Load images first (make plus-images) and re-run with pull_images=false,
-          or push to a registry and set ghcr.io/... tags with pull_images=true.
+          or push to a registry and set ghcr.io/88plug/pangolin-plus/... tags with pull_images=true.
 
-    - name: Refuse silent demote from plus to non-plus
+    - name: Refuse silent demote from plus to non-plus (pangolin or gerbil)
       when:
-        - >
-          (on_disk_pangolin.stdout | default('')) is match('^(pangolin-plus/|ghcr\.io/88plug/pangolin-plus/)')
-        - >
-          not (pangolin_image is match('^(pangolin-plus/|ghcr\.io/88plug/pangolin-plus/)'))
         - not (force_demote | bool)
+        - >
+          (
+            ((on_disk_pangolin.stdout | default('')) is match(plus_image_re)
+              and not (pangolin_image is match(plus_image_re)))
+            or
+            ((on_disk_gerbil.stdout | default('')) is match(plus_image_re)
+              and not (gerbil_image is match(plus_image_re)))
+          )
       fail:
         msg: >-
-          On-disk compose uses plus image {{ on_disk_pangolin.stdout }}.
-          Target {{ pangolin_image }} is not a pangolin-plus image (would demote off plus).
+          On-disk compose uses plus image(s)
+          pangolin={{ on_disk_pangolin.stdout | default('none') }}
+          gerbil={{ on_disk_gerbil.stdout | default('none') }}.
+          Target pangolin={{ pangolin_image }} gerbil={{ gerbil_image }}
+          would demote at least one service off plus.
           Stay on plus (published):
             -e pangolin_image=ghcr.io/88plug/pangolin-plus/pangolin:v1.21.1-plus
             -e gerbil_image=ghcr.io/88plug/pangolin-plus/gerbil:v1.21.1-plus

@@ -21,10 +21,12 @@
 #
 # Roles:
 #   pangolin + gerbil + traefik  — control-plane edge (compose services)
-#   newt                         — site connector (profile `lab` here, or install binary
-#                                  on each site host: scripts/get-plus-newt.sh)
-#   olm                          — end-user client binary only (not a compose service):
-#                                  scripts/get-plus-olm.sh
+#   newt                         — site connector (profile `lab` here for a compose-side
+#                                  site; production site hosts install the plus binary:
+#                                    curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-newt.sh | sh
+#                                  or pull ghcr.io/88plug/pangolin-plus/newt)
+#   olm                          — end-user client only (not a compose service):
+#                                    curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-olm.sh | sh
 #   badger                       — Traefik localPlugins from components/badger (not an image)
 
 name: pangolin-plus

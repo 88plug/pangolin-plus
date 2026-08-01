@@ -77,13 +77,13 @@ make components-build
 make plus-images
 # Load/transfer images to the VPS, then run the playbook with defaults.
 # Or push then pull:
-make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus PLUS_TAG=1.21.1-plus VERSION=1.21.1-plus
+make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus PLUS_TAG=v1.21.1-plus VERSION=1.21.1-plus
 ```
 
 ```yaml
 # pangolin.yml (or -e) after your own push
 image_registry: ghcr.io/88plug/pangolin-plus
-image_tag: 1.21.1-plus
+image_tag: v1.21.1-plus
 pull_images: true
 ```
 

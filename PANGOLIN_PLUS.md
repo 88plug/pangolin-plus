@@ -5,7 +5,11 @@ One monorepo product that **mines** [fosrl/pangolin](https://github.com/fosrl/pa
 
 > **The bar for every change:** one a thoughtful upstream maintainer would accept — small, focused, tested, verified before it ships. Product home: **[88plug/pangolin-plus](https://github.com/88plug/pangolin-plus)** (`main`). Upstream [fosrl/pangolin](https://github.com/fosrl/pangolin) is remote **`upstream`** for sync/port only. Nothing here is a throwaway hack. We do **not** publish separate `newt-plus` / `olm-plus` products — clients live under `components/{newt,olm}` in this tree only.
 
-**Product version:** git tag `vX.Y.Z-plus` + `APP_VERSION` in `server/lib/consts.ts` (plus-release rewrites from the tag). Root `package.json` `"version": "0.0.0"` is a private monorepo placeholder, not the release version.
+**Product version (two related strings):**
+- **Git tag / image tag:** `vX.Y.Z-plus` (leading `v`, e.g. `v1.21.1-plus`) — used on GitHub Releases and GHCR.
+- **`APP_VERSION` / binary `--version`:** `X.Y.Z-plus` (no leading `v`; plus-release strips it from the tag into `server/lib/consts.ts`). Example after a release cut: `1.21.1-plus`.
+- In-tree main may still show base upstream `1.21.1` in `APP_VERSION` until the next tag rewrite.
+- Root `package.json` `"version": "0.0.0"` is a private monorepo placeholder, not the product release.
 
 **Layout**
 
@@ -79,7 +83,8 @@ So pangolin-plus is:
 - `compose.plus.yaml` builds pangolin + gerbil; uses `traefik_config.plus.yml` + monorepo badger localPlugins (`compose.example` keeps stock catalog config); newt profile `lab` restart `"no"`
 - `make components-build` → newt + gerbil + olm binaries; `make plus-images` → `pangolin-plus/*:local`; `make plus-release-binaries VERSION=…` → `dist/plus/`
 - Install scripts: `scripts/get-plus-newt.sh` / `scripts/get-plus-olm.sh` (stock: fosrl `get-*.sh` or `REPO=fosrl/newt`)
-- Ansible `deploy/` defaults to plus local tags + monorepo badger localPlugins; GHCR or fosrl via image overrides
+- Ansible **`deploy/pangolin.yml`** defaults: plus **local** tags (`pangolin-plus/*:local`, `pull_images: false`) + monorepo badger localPlugins; set GHCR (`image_registry=ghcr.io/88plug/pangolin-plus`, `image_tag=v1.21.1-plus`, `pull_images=true`) or fosrl via overrides
+- Ansible **`deploy/upgrade-pangolin.yml`** defaults: **published GHCR plus** (`ghcr.io/88plug/pangolin-plus/{pangolin,gerbil}:v1.21.1-plus`, `pull_images: true`); demote guard keeps plus→stock from silent fallback
 - Traefik pin: **v3.7** (compose + deploy + installer)
 - **Installer (`install/`) remains stock** fosrl images + catalog badger — use compose.plus / deploy / GHCR for plus
 

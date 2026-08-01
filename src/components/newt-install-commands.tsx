@@ -41,8 +41,21 @@ export type NewtSiteInstallCommandsProps = {
     id: string;
     secret: string;
     endpoint: string;
+    /** GitHub release tag (e.g. v1.21.1-plus). "latest" uses GitHub latest redirect. */
     version?: string;
 };
+
+const PLUS_GET_NEWT =
+    "curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-newt.sh | sh";
+const PLUS_NEWT_IMAGE = "ghcr.io/88plug/pangolin-plus/newt";
+
+function plusNewtWindowsUrl(version: string): string {
+    if (version === "latest") {
+        return "https://github.com/88plug/pangolin-plus/releases/latest/download/newt_windows_amd64.exe";
+    }
+    const tag = version.startsWith("v") ? version : `v${version}`;
+    return `https://github.com/88plug/pangolin-plus/releases/download/${tag}/newt_windows_amd64.exe`;
+}
 
 export function NewtSiteInstallCommands({
     id,
@@ -88,7 +101,7 @@ export function NewtSiteInstallCommands({
             Run: [
                 {
                     title: t("install"),
-                    command: `curl -fsSL https://static.pangolin.net/get-newt.sh | bash`
+                    command: PLUS_GET_NEWT
                 },
                 {
                     title: t("run"),
@@ -98,7 +111,7 @@ export function NewtSiteInstallCommands({
             "Systemd Service": [
                 {
                     title: t("install"),
-                    command: `curl -fsSL https://static.pangolin.net/get-newt.sh | bash`
+                    command: PLUS_GET_NEWT
                 },
                 {
                     title: t("envFile"),
@@ -156,7 +169,7 @@ sudo systemctl enable --now newt`
             Run: [
                 {
                     title: t("install"),
-                    command: `curl -fsSL https://static.pangolin.net/get-newt.sh | bash`
+                    command: PLUS_GET_NEWT
                 },
                 {
                     title: t("run"),
@@ -168,7 +181,7 @@ sudo systemctl enable --now newt`
             x64: [
                 {
                     title: t("install"),
-                    command: `curl -o newt.exe -L "https://github.com/fosrl/newt/releases/download/${version}/newt_windows_amd64.exe"`
+                    command: `curl -o newt.exe -L "${plusNewtWindowsUrl(version)}"`
                 },
                 {
                     title: t("run"),
@@ -180,7 +193,7 @@ sudo systemctl enable --now newt`
             "Docker Compose": [
                 `services:
   newt:
-    image: fosrl/newt
+    image: ${PLUS_NEWT_IMAGE}
     container_name: newt
     restart: unless-stopped
     environment:
@@ -189,11 +202,12 @@ sudo systemctl enable --now newt`
       - NEWT_SECRET=${secret}${acceptClientsEnv}`
             ],
             "Docker Run": [
-                `docker run -dit --network host fosrl/newt --id ${id} --secret ${secret} --endpoint ${endpoint}${acceptClientsFlag}`
+                `docker run -dit --network host ${PLUS_NEWT_IMAGE} --id ${id} --secret ${secret} --endpoint ${endpoint}${acceptClientsFlag}`
             ]
         },
         kubernetes: {
             "Helm Chart": [
+                `# Upstream fossorial chart; pin plus image for mined newt binaries`,
                 `helm repo add fossorial https://charts.fossorial.io`,
                 `helm repo update fossorial`,
                 `kubectl create namespace newt --dry-run=client -o yaml | kubectl apply -f -`,
@@ -207,6 +221,8 @@ sudo systemctl enable --now newt`
   -n newt \\
   --set newtInstances[0].name="main-tunnel" \\
   --set newtInstances[0].enabled=true \\
+  --set newtInstances[0].image.repository=${PLUS_NEWT_IMAGE.split(":")[0]} \\
+  --set newtInstances[0].image.tag=v1.21.1-plus \\
   --set-string newtInstances[0].auth.existingSecretName="newt-main-tunnel-auth"${acceptClientsHelmValue}`
             ]
         },
@@ -220,7 +236,7 @@ Description=Newt container
 
 [Container]
 ContainerName=newt
-Image=docker.io/fosrl/newt
+Image=${PLUS_NEWT_IMAGE}
 Environment=PANGOLIN_ENDPOINT=${endpoint}
 Environment=NEWT_ID=${id}
 Environment=NEWT_SECRET=${secret}${!acceptClients ? "\nEnvironment=DISABLE_CLIENTS=true" : ""}
@@ -233,12 +249,12 @@ Restart=always
 WantedBy=default.target`
             ],
             "Podman Run": [
-                `podman run -dit docker.io/fosrl/newt --id ${id} --secret ${secret} --endpoint ${endpoint}${acceptClientsFlag}`
+                `podman run -dit ${PLUS_NEWT_IMAGE} --id ${id} --secret ${secret} --endpoint ${endpoint}${acceptClientsFlag}`
             ]
         },
         nixos: {
             Flake: [
-                `${runAsRootPrefix}nix run 'nixpkgs#fosrl-newt' -- --id ${id} --secret ${secret} --endpoint ${endpoint}${acceptClientsFlag}${disableSshFlag}`
+                `# Prefer plus binary: ${PLUS_GET_NEWT}\n# then: ${runAsRootPrefix}newt --id ${id} --secret ${secret} --endpoint ${endpoint}${acceptClientsFlag}${disableSshFlag}`
             ]
         }
     };

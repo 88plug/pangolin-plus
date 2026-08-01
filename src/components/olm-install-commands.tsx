@@ -22,8 +22,21 @@ export type OlmInstallCommandsProps = {
     id: string;
     secret: string;
     endpoint: string;
+    /** GitHub release tag (e.g. v1.21.1-plus). "latest" uses GitHub latest redirect. */
     version?: string;
 };
+
+const PLUS_GET_OLM =
+    "curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-olm.sh | sh";
+const PLUS_OLM_IMAGE = "ghcr.io/88plug/pangolin-plus/olm";
+
+function plusOlmWindowsUrl(version: string): string {
+    if (version === "latest") {
+        return "https://github.com/88plug/pangolin-plus/releases/latest/download/olm_windows_amd64.exe";
+    }
+    const tag = version.startsWith("v") ? version : `v${version}`;
+    return `https://github.com/88plug/pangolin-plus/releases/download/${tag}/olm_windows_amd64.exe`;
+}
 
 export function OlmInstallCommands({
     id,
@@ -43,20 +56,20 @@ export function OlmInstallCommands({
             All: [
                 {
                     title: t("install"),
-                    command: `curl -fsSL https://static.pangolin.net/get-cli.sh | sudo bash`
+                    command: PLUS_GET_OLM
                 },
                 {
                     title: t("run"),
-                    command: `sudo pangolin up --id ${id} --secret ${secret} --endpoint ${endpoint} --attach`
+                    command: `olm --id ${id} --secret ${secret} --endpoint ${endpoint}`
                 }
             ]
         },
         docker: {
             "Docker Compose": [
                 `services:
-  pangolin-cli:
-    image: fosrl/pangolin-cli
-    container_name: pangolin-cli
+  olm:
+    image: ${PLUS_OLM_IMAGE}
+    container_name: olm
     restart: unless-stopped
     network_mode: host
     cap_add:
@@ -65,19 +78,18 @@ export function OlmInstallCommands({
       - /dev/net/tun:/dev/net/tun
     environment:
       - PANGOLIN_ENDPOINT=${endpoint}
-      - CLIENT_ID=${id}
-      - CLIENT_SECRET=${secret}`
+      - OLM_ID=${id}
+      - OLM_SECRET=${secret}`
             ],
             "Docker Run": [
-                `docker run -dit --network host --cap-add NET_ADMIN --device /dev/net/tun:/dev/net/tun fosrl/pangolin-cli up client --id ${id} --secret ${secret} --endpoint ${endpoint} --attach`
+                `docker run -dit --network host --cap-add NET_ADMIN --device /dev/net/tun:/dev/net/tun ${PLUS_OLM_IMAGE} --id ${id} --secret ${secret} --endpoint ${endpoint}`
             ]
         },
         windows: {
             x64: [
                 {
                     title: t("install"),
-                    command: `# Download and run the installer to install Olm first\n
-curl -o olm.exe -L "https://github.com/fosrl/olm/releases/download/${version}/olm_windows_installer.exe"`
+                    command: `curl -o olm.exe -L "${plusOlmWindowsUrl(version)}"`
                 },
                 {
                     title: t("run"),
