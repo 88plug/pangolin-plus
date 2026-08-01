@@ -202,6 +202,8 @@ jobs:
             cat "/tmp/tags-${name}.txt"
           done
 
+      # dry_run (push=false): load amd64 into local docker for entrypoint smoke.
+      # Real release: multi-arch push (load is incompatible with multi-platform push).
       - name: Build pangolin
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
@@ -209,6 +211,7 @@ jobs:
           file: Dockerfile
           platforms: ${{ steps.prep.outputs.list }}
           push: ${{ needs.meta.outputs.push_images == 'true' }}
+          load: ${{ needs.meta.outputs.push_images != 'true' }}
           build-args: |
             BUILD=oss
             DATABASE=sqlite
@@ -227,6 +230,7 @@ jobs:
           file: components/gerbil/Dockerfile
           platforms: ${{ steps.prep.outputs.list }}
           push: ${{ needs.meta.outputs.push_images == 'true' }}
+          load: ${{ needs.meta.outputs.push_images != 'true' }}
           tags: ${{ steps.prep.outputs.tags_gerbil }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -241,6 +245,7 @@ jobs:
           file: components/newt/Dockerfile
           platforms: ${{ steps.prep.outputs.list }}
           push: ${{ needs.meta.outputs.push_images == 'true' }}
+          load: ${{ needs.meta.outputs.push_images != 'true' }}
           build-args: |
             VERSION=${{ needs.meta.outputs.version }}
           tags: ${{ steps.prep.outputs.tags_newt }}
@@ -257,6 +262,7 @@ jobs:
           file: components/olm/Dockerfile
           platforms: ${{ steps.prep.outputs.list }}
           push: ${{ needs.meta.outputs.push_images == 'true' }}
+          load: ${{ needs.meta.outputs.push_images != 'true' }}
           build-args: |
             VERSION=${{ needs.meta.outputs.version }}
           tags: ${{ steps.prep.outputs.tags_olm }}
@@ -265,6 +271,22 @@ jobs:
             org.opencontainers.image.version=${{ needs.meta.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
           provenance: false
+
+      - name: Smoke dry_run loaded images (amd64)
+        if: needs.meta.outputs.push_images != 'true'
+        env:
+          TAG: ${{ needs.meta.outputs.tag }}
+          IMAGE_PREFIX: ${{ env.IMAGE_PREFIX }}
+        run: |
+          set -euo pipefail
+          # newt/olm: --version via entrypoint binary; gerbil: presence of binary
+          docker run --rm --entrypoint /usr/local/bin/newt "${IMAGE_PREFIX}/newt:${TAG}" --version
+          docker run --rm --entrypoint /usr/local/bin/olm "${IMAGE_PREFIX}/olm:${TAG}" --version
+          docker run --rm --entrypoint /usr/local/bin/gerbil "${IMAGE_PREFIX}/gerbil:${TAG}" --help >/dev/null 2>&1 \
+            || docker run --rm --entrypoint /bin/sh "${IMAGE_PREFIX}/gerbil:${TAG}" -c 'test -x /usr/local/bin/gerbil'
+          # pangolin: image must exist (full server start is slow; inspect only)
+          docker image inspect "${IMAGE_PREFIX}/pangolin:${TAG}" >/dev/null
+          echo "dry_run image load+smoke: OK"
 
   binaries:
     name: Build client binaries
@@ -288,13 +310,8 @@ jobs:
             components/olm/go.sum
             components/gerbil/go.sum
 
-      - name: Syntax-check install scripts
-        run: |
-          set -euo pipefail
-          sh -n scripts/get-plus-newt.sh
-          sh -n scripts/get-plus-olm.sh
-          sh -n scripts/get-plus-gerbil.sh
-          echo "sh -n: OK"
+      - name: Install-script selftest
+        run: make plus-install-scripts-selftest
 
       - name: Build release binaries
         env:
@@ -307,17 +324,17 @@ jobs:
           fi
           make plus-release-binaries VERSION="$VERSION"
 
-      - name: Smoke --version (linux amd64)
+      - name: Smoke --version + SHA256SUMS (linux amd64)
         run: |
           set -euo pipefail
           ./dist/plus/newt_linux_amd64 --version
           ./dist/plus/olm_linux_amd64 --version
           test -x ./dist/plus/gerbil_linux_amd64
           test -f ./dist/plus/SHA256SUMS
-          # Expect full multi-OS matrix (newt 10 + olm 8 + gerbil 2 = 20)
+          ( cd dist/plus && sha256sum -c SHA256SUMS >/dev/null )
           count=$(find dist/plus -type f ! -name SHA256SUMS | wc -l)
-          echo "asset count=$count"
-          test "$count" -ge 18
+          echo "asset count=$count (expect 20)"
+          test "$count" -eq 20
 
       - name: List dist/plus
         run: ls -la dist/plus/

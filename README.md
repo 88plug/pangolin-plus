@@ -138,22 +138,53 @@ Details: [deploy/README.md](deploy/README.md). Ops: [deploy/TROUBLESHOOTING.md](
 ### Maintainer release
 
 ```bash
-# After main is green (make plus-verify locally if you can):
+# Pre-flight (local or PR CI plus-guards job):
+make plus-guards-selftest
+make plus-install-scripts-selftest
+# Optional full binary matrix:
+# make plus-release-binaries VERSION=1.21.1-plus
+
+# Optional dry_run before a real tag (checks out tag ref; loads amd64 images for smoke;
+# does not push GHCR / does not create a GitHub Release):
+#   Actions → Plus Release → workflow_dispatch
+#     tag=v1.21.1-plus  dry_run=true
+#   Tag must already exist on the remote for checkout.
+
 git tag v1.21.1-plus
 git push origin v1.21.1-plus
 # .github/workflows/plus-release.yml → GHCR multi-arch + GitHub Release binaries
-# Dry run: Actions → Plus Release → workflow_dispatch (tag=…, dry_run=true)
-#          dispatch checks out the tag ref, not branch HEAD
 ```
 
 Tag scheme: `vX.Y.Z-plus` or `X.Y.Z-plus` (RC: `vX.Y.Z-plus.rc.1` — no `:latest`). Upstream fosrl AWS pipeline is disabled: `cicd.fosrl-upstream.yml.disabled`.
 
-**GHCR package visibility (required for anonymous pull):** after the first successful image push, GitHub may create packages as **private**. For each of `pangolin`, `gerbil`, `newt`, `olm` under the org:
+**First-release checklist (after the workflow is green):**
 
-1. github.com/orgs/88plug/packages (or repo → Packages)
-2. Open package → Package settings → Change visibility → **Public**
-
-Without this, unauthenticated `docker pull ghcr.io/88plug/pangolin-plus/...` fails.
+1. **GHCR package visibility** — packages may be **private** on first push. For each of `pangolin`, `gerbil`, `newt`, `olm`:
+   - github.com/orgs/88plug/packages (or repo → Packages)
+   - Package settings → Change visibility → **Public**
+   - Without this, unauthenticated `docker pull ghcr.io/88plug/pangolin-plus/...` fails.
+2. **Pull images:**
+   ```bash
+   export TAG=v1.21.1-plus
+   docker pull ghcr.io/88plug/pangolin-plus/pangolin:${TAG}
+   docker pull ghcr.io/88plug/pangolin-plus/gerbil:${TAG}
+   docker pull ghcr.io/88plug/pangolin-plus/newt:${TAG}
+   docker pull ghcr.io/88plug/pangolin-plus/olm:${TAG}
+   ```
+3. **Install clients from the release (checksum-verified):**
+   ```bash
+   VERSION=v1.21.1-plus sh scripts/get-plus-newt.sh
+   VERSION=v1.21.1-plus sh scripts/get-plus-olm.sh
+   # or: curl -fsSL …/get-plus-newt.sh | VERSION=v1.21.1-plus sh
+   newt --version   # should report 1.21.1-plus
+   ```
+4. **Compose pull path:**
+   ```bash
+   export PANGOLIN_IMAGE=ghcr.io/88plug/pangolin-plus/pangolin:${TAG}
+   export GERBIL_IMAGE=ghcr.io/88plug/pangolin-plus/gerbil:${TAG}
+   docker compose -f compose.plus.yaml pull
+   docker compose -f compose.plus.yaml up -d --no-build
+   ```
 
 ### Product boundaries
 
