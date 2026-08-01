@@ -11,6 +11,8 @@ One monorepo. One product. We take [fosrl/pangolin](https://github.com/fosrl/pan
 | **Full delta matrix** | [PANGOLIN_PLUS.md](PANGOLIN_PLUS.md) |
 | **Upstream docs** | [docs.pangolin.net](https://docs.pangolin.net) |
 
+**Version source of truth:** git tag / GHCR image tag `vX.Y.Z-plus` (e.g. `v1.21.1-plus`). Plus-release rewrites `APP_VERSION` in [`server/lib/consts.ts`](server/lib/consts.ts) to `X.Y.Z-plus` (no leading `v`). Root `package.json` `"version": "0.0.0"` is a private monorepo placeholder only.
+
 ---
 
 ## Install (users)

@@ -1,4 +1,5 @@
 .PHONY: build build-pg build-release build-release-arm build-release-amd create-manifests build-arm build-x86 test clean
+.PHONY: check-allow-fosrl-tags
 
 major_tag := $(shell echo $(tag) | cut -d. -f1)
 minor_tag := $(shell echo $(tag) | cut -d. -f1,2)
@@ -22,11 +23,33 @@ OCI_ARGS_EE = --build-arg VERSION=$(tag) \
 	--build-arg IMAGE_TITLE="Pangolin EE" \
 	--build-arg IMAGE_DESCRIPTION="Pangolin Enterprise Edition - Identity-aware VPN and proxy for remote access to anything, anywhere"
 
+# ---------------------------------------------------------------------------
+# LEGACY upstream-shaped targets (tag + push fosrl/pangolin:*)
+# Product path is NOT these targets:
+#   local images:  make plus-images
+#   published:     make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus
+#   release CI:    .github/workflows/plus-release.yml (tag vX.Y.Z-plus)
+# Gated: set ALLOW_FOSRL_TAGS=1 for targets that tag/push fosrl/pangolin
+# (build-release*, build-sqlite/ee/rc*, create-manifests*, build-arm/x86).
+# Local CI/dev loaders (dev-build-*) use pangolin-plus/* and are NOT gated.
+# ---------------------------------------------------------------------------
+check-allow-fosrl-tags:
+	@if [ "$(ALLOW_FOSRL_TAGS)" != "1" ]; then \
+		echo "Error: this target tags fosrl/pangolin:* (upstream-shaped legacy only)."; \
+		echo "  Product images:  make plus-images  |  make dev-build-sqlite"; \
+		echo "  Published push:  make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus"; \
+		echo "  Release CI:      .github/workflows/plus-release.yml (git tag vX.Y.Z-plus)"; \
+		echo "  Force legacy:    ALLOW_FOSRL_TAGS=1 make <target> tag=..."; \
+		exit 1; \
+	fi
+
 .PHONY: build-release build-sqlite build-postgresql build-ee-sqlite build-ee-postgresql
 
-build-release: build-sqlite build-postgresql build-ee-sqlite build-ee-postgresql
+# Upstream-shaped multi-variant push (fosrl/pangolin:*). Prefer plus-images / plus-release.
+build-release: check-allow-fosrl-tags
+	$(MAKE) build-sqlite build-postgresql build-ee-sqlite build-ee-postgresql tag=$(tag) ALLOW_FOSRL_TAGS=$(ALLOW_FOSRL_TAGS)
 
-build-sqlite:
+build-sqlite: check-allow-fosrl-tags
 	@if [ -z "$(tag)" ]; then \
 		echo "Error: tag is required. Usage: make build-release tag=<tag>"; \
 		exit 1; \
@@ -42,7 +65,7 @@ build-sqlite:
 		--tag fosrl/pangolin:$(tag) \
 		--push .
 
-build-postgresql:
+build-postgresql: check-allow-fosrl-tags
 	@if [ -z "$(tag)" ]; then \
 		echo "Error: tag is required. Usage: make build-release tag=<tag>"; \
 		exit 1; \
@@ -58,7 +81,7 @@ build-postgresql:
 		--tag fosrl/pangolin:postgresql-$(tag) \
 		--push .
 
-build-ee-sqlite:
+build-ee-sqlite: check-allow-fosrl-tags
 	@if [ -z "$(tag)" ]; then \
 		echo "Error: tag is required. Usage: make build-release tag=<tag>"; \
 		exit 1; \
@@ -74,7 +97,7 @@ build-ee-sqlite:
 		--tag fosrl/pangolin:ee-$(tag) \
 		--push .
 
-build-ee-postgresql:
+build-ee-postgresql: check-allow-fosrl-tags
 	@if [ -z "$(tag)" ]; then \
 		echo "Error: tag is required. Usage: make build-release tag=<tag>"; \
 		exit 1; \
@@ -102,7 +125,8 @@ build-saas:
 		--tag $(AWS_IMAGE):$(tag) \
 		--push .
 
-build-release-arm:
+# Upstream-shaped arm64 push (fosrl/pangolin:*-arm64). Prefer plus-images / plus-release.
+build-release-arm: check-allow-fosrl-tags
 	@if [ -z "$(tag)" ]; then \
 		echo "Error: tag is required. Usage: make build-release-arm tag=<tag>"; \
 		exit 1; \
@@ -170,7 +194,8 @@ build-release-arm:
 		--tag fosrl/pangolin:ee-postgresql-$(tag)-arm64 \
 		--push .
 
-build-release-amd:
+# Upstream-shaped amd64 push (fosrl/pangolin:*-amd64). Prefer plus-images / plus-release.
+build-release-amd: check-allow-fosrl-tags
 	@if [ -z "$(tag)" ]; then \
 		echo "Error: tag is required. Usage: make build-release-amd tag=<tag>"; \
 		exit 1; \
@@ -238,7 +263,8 @@ build-release-amd:
 		--tag fosrl/pangolin:ee-postgresql-$(tag)-amd64 \
 		--push .
 
-create-manifests:
+# Upstream-shaped multi-arch manifests (fosrl/pangolin:*). Prefer plus-images / plus-release.
+create-manifests: check-allow-fosrl-tags
 	@if [ -z "$(tag)" ]; then \
 		echo "Error: tag is required. Usage: make create-manifests tag=<tag>"; \
 		exit 1; \
@@ -279,7 +305,7 @@ create-manifests:
 		fosrl/pangolin:ee-postgresql-latest-amd64 && \
 	echo "All multi-arch manifests created successfully!"
 
-build-rc:
+build-rc: check-allow-fosrl-tags
 	@if [ -z "$(tag)" ]; then \
 		echo "Error: tag is required. Usage: make build-release tag=<tag>"; \
 		exit 1; \
@@ -333,7 +359,7 @@ build-rc:
 		--tag fosrl/pangolin:ee-postgresql-$(tag) \
 		--push .
 
-build-rc-arm:
+build-rc-arm: check-allow-fosrl-tags
 	@if [ -z "$(tag)" ]; then \
 		echo "Error: tag is required. Usage: make build-rc-arm tag=<tag>"; \
 		exit 1; \
@@ -387,7 +413,7 @@ build-rc-arm:
 		--tag fosrl/pangolin:ee-postgresql-$(tag)-arm64 \
 		--push .
 
-build-rc-amd:
+build-rc-amd: check-allow-fosrl-tags
 	@if [ -z "$(tag)" ]; then \
 		echo "Error: tag is required. Usage: make build-rc-amd tag=<tag>"; \
 		exit 1; \
@@ -441,7 +467,7 @@ build-rc-amd:
 		--tag fosrl/pangolin:ee-postgresql-$(tag)-amd64 \
 		--push .
 
-create-manifests-rc:
+create-manifests-rc: check-allow-fosrl-tags
 	@if [ -z "$(tag)" ]; then \
 		echo "Error: tag is required. Usage: make create-manifests-rc tag=<tag>"; \
 		exit 1; \
@@ -468,7 +494,7 @@ create-manifests-rc:
 		fosrl/pangolin:ee-postgresql-$(tag)-amd64 && \
 	echo "All RC multi-arch manifests created successfully!"
 
-build-arm:
+build-arm: check-allow-fosrl-tags
 	@CREATED=$$(date -u +"%Y-%m-%dT%H:%M:%SZ"); \
 	REVISION=$$(git rev-parse HEAD 2>/dev/null || echo "unknown"); \
 	docker buildx build \
@@ -480,7 +506,7 @@ build-arm:
 		--platform linux/arm64 \
 		-t fosrl/pangolin:latest .
 
-build-x86:
+build-x86: check-allow-fosrl-tags
 	@CREATED=$$(date -u +"%Y-%m-%dT%H:%M:%SZ"); \
 	REVISION=$$(git rev-parse HEAD 2>/dev/null || echo "unknown"); \
 	docker buildx build \
@@ -492,6 +518,7 @@ build-x86:
 		--platform linux/amd64 \
 		-t fosrl/pangolin:latest .
 
+# Local product load only (CI: .github/workflows/test.yml). No fosrl tags, no push.
 dev-build-sqlite:
 	@CREATED=$$(date -u +"%Y-%m-%dT%H:%M:%SZ"); \
 	REVISION=$$(git rev-parse HEAD 2>/dev/null || echo "unknown"); \
@@ -500,9 +527,10 @@ dev-build-sqlite:
 		--build-arg VERSION=dev \
 		--build-arg REVISION=$$REVISION \
 		--build-arg CREATED=$$CREATED \
-		--build-arg IMAGE_TITLE="Pangolin" \
-		--build-arg IMAGE_DESCRIPTION="Identity-aware VPN and proxy for remote access to anything, anywhere" \
-		-t fosrl/pangolin:latest .
+		--build-arg IMAGE_TITLE="Pangolin Plus" \
+		--build-arg IMAGE_DESCRIPTION="pangolin-plus monorepo local sqlite image" \
+		-t pangolin-plus/pangolin:local \
+		-t pangolin-plus/pangolin:dev-sqlite .
 
 dev-build-pg:
 	@CREATED=$$(date -u +"%Y-%m-%dT%H:%M:%SZ"); \
@@ -512,28 +540,38 @@ dev-build-pg:
 		--build-arg VERSION=dev \
 		--build-arg REVISION=$$REVISION \
 		--build-arg CREATED=$$CREATED \
-		--build-arg IMAGE_TITLE="Pangolin" \
-		--build-arg IMAGE_DESCRIPTION="Identity-aware VPN and proxy for remote access to anything, anywhere" \
-		-t fosrl/pangolin:postgresql-latest .
+		--build-arg IMAGE_TITLE="Pangolin Plus" \
+		--build-arg IMAGE_DESCRIPTION="pangolin-plus monorepo local postgresql image" \
+		-t pangolin-plus/pangolin:dev-pg \
+		-t pangolin-plus/pangolin:local-pg .
 
+# Local run after dev-build-sqlite (product tags).
 test:
-	docker run -it -p 3000:3000 -p 3001:3001 -p 3002:3002 -v ./config:/app/config fosrl/pangolin:latest
+	docker run -it -p 3000:3000 -p 3001:3001 -p 3002:3002 -v ./config:/app/config pangolin-plus/pangolin:local
 
 clean:
-	docker rmi pangolin
+	-docker rmi pangolin-plus/pangolin:local pangolin-plus/pangolin:dev-sqlite pangolin-plus/pangolin:dev-pg pangolin-plus/pangolin:local-pg 2>/dev/null || true
 
-# --- pangolin-plus monorepo components ---
+# --- pangolin-plus monorepo components (PRODUCT PATH) ---
 #
 # Binaries (go build → bin/):  make components-build
 # Local Docker images:         make plus-images
-# Optional registry push:      make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus
+#   → tags $(PLUS_REGISTRY)/{pangolin,gerbil,newt,olm}:$(PLUS_TAG)
+#   → default PLUS_REGISTRY=pangolin-plus (local-only name, not a remote registry)
+# Published push to GHCR:      make plus-images-push \
+#                                PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus \
+#                                PLUS_TAG=v1.21.1-plus VERSION=1.21.1-plus
 # Multi-OS release binaries:   make plus-release-binaries VERSION=1.21.1-plus
 # Product CI:                  .github/workflows/plus-release.yml (tag vX.Y.Z-plus)
+#
+# Do NOT use legacy build-release* (fosrl/pangolin:*) — see check-allow-fosrl-tags above.
 #
 # badger is a Traefik plugin (Go module), not a long-running image:
 #   copy components/badger into Traefik localPlugins, or build with traefik yaegi.
 # olm is an end-user client binary (not a controller compose service).
 
+# Local default (docker tag namespace only). Published path:
+#   PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus
 PLUS_REGISTRY ?= pangolin-plus
 PLUS_TAG ?= local
 # Source tags for retag-on-push (always built by plus-images defaults / compose)
@@ -575,7 +613,7 @@ plus-check-docker:
 plus-check-fosrl-registry:
 	@if [ -z "$(PLUS_REGISTRY)" ]; then echo "Error: PLUS_REGISTRY is empty"; exit 1; fi
 	@if [ "$(PLUS_REGISTRY)" = "pangolin-plus" ]; then \
-		echo "Error: set PLUS_REGISTRY to a real registry (e.g. ghcr.io/you/pangolin-plus)"; \
+		echo "Error: set PLUS_REGISTRY to a real registry (e.g. ghcr.io/88plug/pangolin-plus)"; \
 		exit 1; \
 	fi
 	@reg_lc=$$(printf '%s' "$(PLUS_REGISTRY)" | tr '[:upper:]' '[:lower:]'); \
@@ -678,7 +716,7 @@ plus-images: plus-image-pangolin plus-image-gerbil plus-image-newt plus-image-ol
 # Always retags from PLUS_LOCAL_REGISTRY/*:PLUS_LOCAL_TAG when src exists so a
 # second push after rebuild ships the new layers (never keep a stale dest tag):
 #   make plus-images
-#   make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus PLUS_TAG=1.21.1-plus VERSION=1.21.1-plus
+#   make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus PLUS_TAG=v1.21.1-plus VERSION=1.21.1-plus
 plus-images-push: plus-check-vars plus-check-fosrl-registry plus-check-docker
 	@for name in pangolin gerbil newt olm; do \
 		src="$(PLUS_LOCAL_REGISTRY)/$$name:$(PLUS_LOCAL_TAG)"; \
@@ -723,8 +761,49 @@ plus-guards-selftest: plus-check-vars
 			echo "FAIL: should refuse PLUS_REGISTRY=$$reg"; exit 1; \
 		fi; \
 	done; \
-	$(MAKE) -s plus-check-fosrl-registry PLUS_REGISTRY=ghcr.io/you/pangolin-plus >/dev/null; \
+	$(MAKE) -s plus-check-fosrl-registry PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus >/dev/null; \
 	echo "fosrl refuse + allow non-fosrl: OK (no docker required)"; \
+	if $(MAKE) -s check-allow-fosrl-tags >/dev/null 2>&1; then \
+		echo "FAIL: check-allow-fosrl-tags should refuse without ALLOW_FOSRL_TAGS=1"; exit 1; \
+	fi; \
+	if $(MAKE) -s build-release tag=1.0.0 >/dev/null 2>&1; then \
+		echo "FAIL: bare make build-release should refuse without ALLOW_FOSRL_TAGS=1"; exit 1; \
+	fi; \
+	if $(MAKE) -s build-sqlite tag=1.0.0 >/dev/null 2>&1; then \
+		echo "FAIL: bare make build-sqlite should refuse without ALLOW_FOSRL_TAGS=1"; exit 1; \
+	fi; \
+	if $(MAKE) -s -C components/newt docker-build-release tag=1.0.0 >/dev/null 2>&1; then \
+		echo "FAIL: components/newt docker-build-release should refuse without ALLOW_FOSRL_TAGS=1"; exit 1; \
+	fi; \
+	if $(MAKE) -s -C components/olm docker-build-release tag=1.0.0 >/dev/null 2>&1; then \
+		echo "FAIL: components/olm docker-build-release should refuse without ALLOW_FOSRL_TAGS=1"; exit 1; \
+	fi; \
+	if $(MAKE) -s -C components/gerbil docker-build-release tag=1.0.0 >/dev/null 2>&1; then \
+		echo "FAIL: components/gerbil docker-build-release should refuse without ALLOW_FOSRL_TAGS=1"; exit 1; \
+	fi; \
+	echo "ALLOW_FOSRL_TAGS refuse (build-release + build-sqlite + component push): OK"; \
+	# Keep plus_re byte-aligned with deploy/upgrade-pangolin.yml plus_image_re \
+	plus_re='^(docker\.io/|index\.docker\.io/|registry-1\.docker\.io/)?(pangolin-plus/|ghcr\.io/88plug/pangolin-plus/)'; \
+	playbook_re=$$(grep -E "plus_image_re:" deploy/upgrade-pangolin.yml | head -1 | sed -n "s/.*plus_image_re: *['\"]\\(.*\\)['\"].*/\\1/p"); \
+	if [ -n "$$playbook_re" ] && [ "$$playbook_re" != "$$plus_re" ]; then \
+		echo "FAIL: plus_re != upgrade-pangolin.yml plus_image_re"; \
+		echo "  selftest: $$plus_re"; \
+		echo "  playbook: $$playbook_re"; \
+		exit 1; \
+	fi; \
+	for img in \
+		'pangolin-plus/pangolin:local' \
+		'ghcr.io/88plug/pangolin-plus/pangolin:v1.21.1-plus' \
+		'docker.io/pangolin-plus/gerbil:local' \
+		'ghcr.io/88plug/pangolin-plus/gerbil:v1.21.1-plus'; do \
+		printf '%s' "$$img" | grep -Eq "$$plus_re" \
+			|| { echo "FAIL: plus-family regex should match $$img"; exit 1; }; \
+	done; \
+	for img in 'fosrl/pangolin:latest' 'fosrl/gerbil:latest' 'ghcr.io/fosrl/pangolin:1.21.1'; do \
+		printf '%s' "$$img" | grep -Eq "$$plus_re" \
+			&& { echo "FAIL: plus-family regex should NOT match $$img"; exit 1; }; \
+	done; \
+	echo "plus-family demote regex: OK"; \
 	test -f components/badger/go.mod || { echo "FAIL: missing components/badger/go.mod"; exit 1; }; \
 	test -f config/traefik/traefik_config.plus.yml || { echo "FAIL: missing traefik_config.plus.yml"; exit 1; }; \
 	grep -q 'localPlugins' config/traefik/traefik_config.plus.yml || { echo "FAIL: plus traefik config missing localPlugins"; exit 1; }; \

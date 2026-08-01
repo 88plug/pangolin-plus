@@ -2,12 +2,20 @@
 # Pangolin Safe Upgrade - Backup, optional image pin, health check, auto-rollback
 # Usage: ansible-playbook -i inventory.ini upgrade-pangolin.yml
 #
-# Defaults target **registry/stock** images (pull_images: true).
-# For plus local tags (pangolin-plus/*:local already loaded on the host):
+# Defaults target **published pangolin-plus** images on GHCR (pull_images: true).
+# Bump the tag when cutting a new vX.Y.Z-plus release, or override -e.
+#
+# Plus local tags (pangolin-plus/*:local already loaded on the host):
 #   ansible-playbook -i inventory.ini upgrade-pangolin.yml \
 #     -e pangolin_image=pangolin-plus/pangolin:local \
 #     -e gerbil_image=pangolin-plus/gerbil:local \
 #     -e pull_images=false
+#
+# Upstream stock (fosrl) fallback:
+#   -e pangolin_image=fosrl/pangolin:1.21.1 \
+#   -e gerbil_image=fosrl/gerbil:latest \
+#   -e pull_images=true \
+#   -e force_demote=true   # required if on-disk is already plus
 #
 # Full plus re-deploy (compose + badger + config): re-run pangolin.yml instead.
 #
@@ -29,16 +37,22 @@
     backup_dir: "/opt/pangolin/backups"
     backup_retention_count: 5
 
-    # Full image refs written into docker-compose.yml before up
-    pangolin_image: "fosrl/pangolin:latest"
-    gerbil_image: "fosrl/gerbil:latest"
+    # Full image refs written into docker-compose.yml before up.
+    # Product default = published GHCR plus (match latest release tag).
+    # Local: pangolin-plus/pangolin:local + pull_images=false
+    # Stock: fosrl/pangolin:1.21.1 + force_demote=true if leaving plus
+    pangolin_image: "ghcr.io/88plug/pangolin-plus/pangolin:v1.21.1-plus"
+    gerbil_image: "ghcr.io/88plug/pangolin-plus/gerbil:v1.21.1-plus"
     traefik_image: "traefik:v3.7"
-    # true = docker compose pull (registry/stock). false = local tags only.
+    # true = docker compose pull (registry). false = local tags only.
     pull_images: true
     # Re-copy monorepo components/badger when present on the control node
     resync_badger: true
-    # Required to switch off an on-disk pangolin-plus/* deploy onto stock defaults
+    # Required to switch off an on-disk plus deploy onto stock (fosrl/*) etc.
     force_demote: false
+    # Plus-family image prefix (local, docker.io local name, or published GHCR).
+    # Keep in sync with Makefile plus-guards-selftest plus_re.
+    plus_image_re: '^(docker\.io/|index\.docker\.io/|registry-1\.docker\.io/)?(pangolin-plus/|ghcr\.io/88plug/pangolin-plus/)'
 
     health_check_retries: 30
     health_check_delay: 10
@@ -83,12 +97,34 @@
       changed_when: false
       failed_when: false
 
+    - name: Read on-disk compose gerbil image
+      shell: |
+        set -e
+        f="{{ pangolin_dir }}/docker-compose.yml"
+        if [ ! -f "$f" ]; then echo "none"; exit 0; fi
+        awk '
+          /^[[:space:]]*gerbil:[[:space:]]*$/ { in_svc=1; next }
+          in_svc && /^[[:space:]]*[a-zA-Z0-9_-]+:[[:space:]]*$/ { in_svc=0 }
+          in_svc && /^[[:space:]]*image:[[:space:]]*/ {
+            sub(/^[[:space:]]*image:[[:space:]]*/, "")
+            gsub(/["\047]/, "")
+            print
+            exit
+          }
+        ' "$f"
+      args:
+        executable: /bin/bash
+      register: on_disk_gerbil
+      changed_when: false
+      failed_when: false
+
     - name: Display pre-upgrade status
       debug:
         msg: |
           Pre-upgrade status:
             Health: {{ pre_health.stdout }}
             On-disk pangolin image: {{ on_disk_pangolin.stdout | default('none') }}
+            On-disk gerbil image: {{ on_disk_gerbil.stdout | default('none') }}
             Target images: {{ pangolin_image }} / {{ gerbil_image }} / {{ traefik_image }}
             pull_images: {{ pull_images }}
             Current versions:
@@ -104,25 +140,40 @@
         that:
           - not (pull_images | bool) or not (pangolin_image is match('^pangolin-plus/'))
           - not (pull_images | bool) or not (gerbil_image is match('^pangolin-plus/'))
+          - not (pull_images | bool) or not (pangolin_image is match('^docker\.io/pangolin-plus/'))
+          - not (pull_images | bool) or not (gerbil_image is match('^docker\.io/pangolin-plus/'))
         fail_msg: >-
           pull_images=true cannot use local-only image names (pangolin-plus/*).
           Load images first (make plus-images) and re-run with pull_images=false,
-          or push to a registry and set ghcr.io/... tags with pull_images=true.
+          or push to a registry and set ghcr.io/88plug/pangolin-plus/... tags with pull_images=true.
 
-    - name: Refuse silent demote from plus-local to stock
+    - name: Refuse silent demote from plus to non-plus (pangolin or gerbil)
       when:
-        - (on_disk_pangolin.stdout | default('')) is match('^pangolin-plus/')
-        - not (pangolin_image is match('^pangolin-plus/'))
         - not (force_demote | bool)
+        - >
+          (
+            ((on_disk_pangolin.stdout | default('')) is match(plus_image_re)
+              and not (pangolin_image is match(plus_image_re)))
+            or
+            ((on_disk_gerbil.stdout | default('')) is match(plus_image_re)
+              and not (gerbil_image is match(plus_image_re)))
+          )
       fail:
         msg: >-
-          On-disk compose uses plus-local image {{ on_disk_pangolin.stdout }}.
-          Default upgrade target {{ pangolin_image }} would demote off plus.
-          Re-run with:
+          On-disk compose uses plus image(s)
+          pangolin={{ on_disk_pangolin.stdout | default('none') }}
+          gerbil={{ on_disk_gerbil.stdout | default('none') }}.
+          Target pangolin={{ pangolin_image }} gerbil={{ gerbil_image }}
+          would demote at least one service off plus.
+          Stay on plus (published):
+            -e pangolin_image=ghcr.io/88plug/pangolin-plus/pangolin:v1.21.1-plus
+            -e gerbil_image=ghcr.io/88plug/pangolin-plus/gerbil:v1.21.1-plus
+            -e pull_images=true
+          Stay on plus (local):
             -e pangolin_image=pangolin-plus/pangolin:local
             -e gerbil_image=pangolin-plus/gerbil:local
             -e pull_images=false
-          or explicitly -e force_demote=true to switch to stock/registry.
+          Or explicitly -e force_demote=true to switch to stock/other.
 
     - name: Create backup directory
       file:

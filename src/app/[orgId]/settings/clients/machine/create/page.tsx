@@ -159,8 +159,9 @@ export default function Page() {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 3000);
 
+                // Plus product releases (olm_* assets on vX.Y.Z-plus tags).
                 const response = await fetch(
-                    `https://api.github.com/repos/fosrl/olm/releases/latest`,
+                    `https://api.github.com/repos/88plug/pangolin-plus/releases/latest`,
                     { signal: controller.signal }
                 );
 

@@ -4,6 +4,8 @@ all: local
 
 VERSION ?= dev
 LDFLAGS = -X main.newtVersion=$(VERSION)
+# Local monorepo image namespace (product path). Published: ghcr.io/88plug/pangolin-plus/newt
+PLUS_IMAGE ?= pangolin-plus/newt
 
 local:
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS) -X main.newtPlatform=$(shell go env GOOS)_$(shell go env GOARCH)" -o ./bin/newt
@@ -11,10 +13,18 @@ local:
 test:
 	go test ./...
 
+# Local load only — never pushes.
 docker-build:
-	docker build -t fosrl/newt:latest .
+	docker build -t $(PLUS_IMAGE):local -t $(PLUS_IMAGE):latest .
 
+# Upstream-shaped multi-arch push to fosrl/newt (gated). Prefer monorepo plus-images-push.
 docker-build-release:
+	@if [ "$(ALLOW_FOSRL_TAGS)" != "1" ]; then \
+		echo "Error: docker-build-release tags/pushes fosrl/newt:* (legacy only)."; \
+		echo "  Product: make -C ../.. plus-images  |  plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus"; \
+		echo "  Force:   ALLOW_FOSRL_TAGS=1 make docker-build-release tag=<tag>"; \
+		exit 1; \
+	fi
 	@if [ -z "$(tag)" ]; then \
 		echo "Error: tag is required. Usage: make docker-build-release tag=<tag>"; \
 		exit 1; \

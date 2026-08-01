@@ -21,14 +21,17 @@ type ReleaseInfo = {
 };
 let staleReleaseInfo: ReleaseInfo | null = null;
 
+/** Product monorepo releases (newt_* assets on vX.Y.Z-plus tags). */
+const PLUS_RELEASES_REPO = "88plug/pangolin-plus";
+
 /**
- * Fetches the latest stable newt release from GitHub and returns the version
- * tag together with a map of asset-name → sha256 hex digest.
+ * Fetches the latest stable plus newt release from GitHub and returns the
+ * version tag together with a map of asset-name → sha256 hex digest.
  * Results are cached for one hour; stale data is returned on failure.
  */
 async function getLatestReleaseInfo(): Promise<ReleaseInfo | null> {
     try {
-        const cached = await cache.get<ReleaseInfo>("cache:newtReleaseInfo");
+        const cached = await cache.get<ReleaseInfo>("cache:newtReleaseInfoPlus");
         if (cached) {
             return cached;
         }
@@ -37,7 +40,7 @@ async function getLatestReleaseInfo(): Promise<ReleaseInfo | null> {
         const timeoutId = setTimeout(() => controller.abort(), 5000);
 
         const fetchResponse = await fetch(
-            "https://api.github.com/repos/fosrl/newt/releases",
+            `https://api.github.com/repos/${PLUS_RELEASES_REPO}/releases`,
             { signal: controller.signal }
         );
 
@@ -45,27 +48,28 @@ async function getLatestReleaseInfo(): Promise<ReleaseInfo | null> {
 
         if (!fetchResponse.ok) {
             logger.warn(
-                `Failed to fetch Newt releases from GitHub: ${fetchResponse.status} ${fetchResponse.statusText}`
+                `Failed to fetch plus Newt releases from GitHub: ${fetchResponse.status} ${fetchResponse.statusText}`
             );
             return staleReleaseInfo;
         }
 
         let releases: any[] = await fetchResponse.json();
         if (!Array.isArray(releases) || releases.length === 0) {
-            logger.warn("No releases found for Newt repository");
+            logger.warn("No releases found for pangolin-plus repository");
             return staleReleaseInfo;
         }
 
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-        // Drop drafts, pre-releases, anything with "rc" in the tag name,
-        // and releases published less than 1 day ago.
+        // Plus product tags: vX.Y.Z-plus (optional -rc). Drop drafts, prerelease
+        // flag, rc tags, and releases published less than 1 day ago.
         releases = releases.filter(
             (r: any) =>
                 !r.draft &&
                 !r.prerelease &&
+                typeof r.tag_name === "string" &&
+                /-plus(\.|$)/.test(r.tag_name) &&
                 !r.tag_name.includes("rc") &&
-                !r.tag_name.includes("v") &&
                 r.published_at &&
                 new Date(r.published_at) <= oneDayAgo
         );
@@ -81,7 +85,7 @@ async function getLatestReleaseInfo(): Promise<ReleaseInfo | null> {
         });
 
         if (releases.length === 0) {
-            logger.warn("No stable releases found for Newt repository");
+            logger.warn("No stable plus releases found for Newt binaries");
             return staleReleaseInfo;
         }
 
@@ -107,14 +111,14 @@ async function getLatestReleaseInfo(): Promise<ReleaseInfo | null> {
 
         const info: ReleaseInfo = { version, assetDigests };
         staleReleaseInfo = info;
-        await cache.set("cache:newtReleaseInfo", info, 3600);
+        await cache.set("cache:newtReleaseInfoPlus", info, 3600);
         return info;
     } catch (error: any) {
         if (error.name === "AbortError") {
-            logger.warn("Request to fetch Newt releases timed out (5s)");
+            logger.warn("Request to fetch plus Newt releases timed out (5s)");
         } else {
             logger.warn(
-                "Error fetching Newt releases:",
+                "Error fetching plus Newt releases:",
                 error.message || error
             );
         }
@@ -276,7 +280,7 @@ export async function getNewtVersion(
             ? `newt_${platform}.exe`
             : `newt_${platform}`;
 
-        const downloadUrl = `https://github.com/fosrl/newt/releases/download/${latestVersion}/${binaryName}`;
+        const downloadUrl = `https://github.com/${PLUS_RELEASES_REPO}/releases/download/${latestVersion}/${binaryName}`;
 
         // Look up the SHA256 digest for this specific binary from the GitHub
         // release asset metadata (the `digest` field, format "sha256:<hex>").
