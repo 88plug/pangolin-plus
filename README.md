@@ -56,17 +56,23 @@ docker pull ghcr.io/88plug/pangolin-plus/gerbil:${TAG}
 docker pull ghcr.io/88plug/pangolin-plus/newt:${TAG}
 docker pull ghcr.io/88plug/pangolin-plus/olm:${TAG}
 
-# Compose with published images
+# Compose with published images (pull; do not rebuild from local Dockerfiles)
 export PANGOLIN_IMAGE=ghcr.io/88plug/pangolin-plus/pangolin:${TAG}
 export GERBIL_IMAGE=ghcr.io/88plug/pangolin-plus/gerbil:${TAG}
 export NEWT_IMAGE=ghcr.io/88plug/pangolin-plus/newt:${TAG}
-docker compose -f compose.plus.yaml up -d
+# optional: COMPOSE_PULL_POLICY=always
+docker compose -f compose.plus.yaml pull
+docker compose -f compose.plus.yaml up -d --no-build
 
 # Site client (newt) / user client (olm) from GitHub Releases
+# (verifies SHA256SUMS; accepts VERSION with or without leading v)
 curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-newt.sh | sh
 curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-olm.sh | sh
 # Pin: VERSION=v1.21.1-plus sh get-plus-newt.sh
+#      VERSION=1.21.1-plus  sh get-plus-newt.sh
 ```
+
+**Gerbil** is container-first on the controller (`GERBIL_IMAGE` / GHCR). Optional host binary: `scripts/get-plus-gerbil.sh` (linux amd64/arm64 only).
 
 Stock fosrl (no plus deltas): `get-newt.sh` / `get-olm.sh` from [fosrl/newt](https://github.com/fosrl/newt) / [fosrl/olm](https://github.com/fosrl/olm), or `REPO=fosrl/newt` with the plus scripts. Badger is Traefik **localPlugins** from `components/badger` (not a release binary).
 
@@ -136,10 +142,18 @@ Details: [deploy/README.md](deploy/README.md). Ops: [deploy/TROUBLESHOOTING.md](
 git tag v1.21.1-plus
 git push origin v1.21.1-plus
 # .github/workflows/plus-release.yml → GHCR multi-arch + GitHub Release binaries
-# Dry run: Actions → Plus Release → workflow_dispatch (dry_run=true)
+# Dry run: Actions → Plus Release → workflow_dispatch (tag=…, dry_run=true)
+#          dispatch checks out the tag ref, not branch HEAD
 ```
 
 Tag scheme: `vX.Y.Z-plus` or `X.Y.Z-plus` (RC: `vX.Y.Z-plus.rc.1` — no `:latest`). Upstream fosrl AWS pipeline is disabled: `cicd.fosrl-upstream.yml.disabled`.
+
+**GHCR package visibility (required for anonymous pull):** after the first successful image push, GitHub may create packages as **private**. For each of `pangolin`, `gerbil`, `newt`, `olm` under the org:
+
+1. github.com/orgs/88plug/packages (or repo → Packages)
+2. Open package → Package settings → Change visibility → **Public**
+
+Without this, unauthenticated `docker pull ghcr.io/88plug/pangolin-plus/...` fails.
 
 ### Product boundaries
 

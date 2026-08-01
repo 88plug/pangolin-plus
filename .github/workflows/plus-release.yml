@@ -11,6 +11,7 @@
 # Maintainer:
 #   git tag v1.21.1-plus && git push origin v1.21.1-plus
 #   # or: Actions → Plus Release → Run workflow
+#   # After first publish: set GHCR package visibility to Public for anonymous pull
 #
 # Upstream fosrl AWS/Docker Hub pipeline is disabled:
 #   .github/workflows/cicd.fosrl-upstream.yml.disabled
@@ -27,7 +28,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (e.g. v1.21.1-plus). Used for image/binary version labels."
+        description: "Release tag (e.g. v1.21.1-plus). Checkout + image/binary labels."
         required: true
         type: string
       dry_run:
@@ -40,46 +41,67 @@ concurrency:
   group: plus-release-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: false
 
+# Workflow defaults: least privilege; jobs raise what they need.
 permissions:
-  contents: write   # GitHub Releases
-  packages: write   # GHCR
-  id-token: write   # reserved for optional cosign (not required)
+  contents: read
 
 env:
   REGISTRY: ghcr.io
-  # ghcr.io/<owner>/<repo>/{pangolin,gerbil,newt,olm}
   IMAGE_PREFIX: ghcr.io/${{ github.repository }}
   GO_VERSION: "1.26"
+  # Plus product tag allowlist (must match meta validation)
+  TAG_ALLOWLIST: '^[v]?[0-9]+\.[0-9]+\.[0-9]+-plus(\.[a-zA-Z0-9.]+)?$'
 
 jobs:
   meta:
     name: Resolve tag
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
       version: ${{ steps.meta.outputs.version }}
       is_rc: ${{ steps.meta.outputs.is_rc }}
       dry_run: ${{ steps.meta.outputs.dry_run }}
       push_images: ${{ steps.meta.outputs.push_images }}
+      checkout_ref: ${{ steps.meta.outputs.checkout_ref }}
     steps:
       - name: Compute release metadata
         id: meta
         shell: bash
+        env:
+          # Never interpolate untrusted inputs into the script body
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          GITHUB_REF: ${{ github.ref }}
+          TAG_ALLOWLIST: ${{ env.TAG_ALLOWLIST }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ inputs.tag }}"
-            DRY_RUN="${{ inputs.dry_run }}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="${INPUT_TAG:-}"
+            DRY_RUN="${INPUT_DRY_RUN:-false}"
+            # Dispatch must build the tagged commit, not branch HEAD
+            CHECKOUT_REF="$TAG"
           else
             TAG="${GITHUB_REF#refs/tags/}"
             DRY_RUN="false"
+            CHECKOUT_REF="$TAG"
           fi
           if [ -z "$TAG" ]; then
             echo "Error: empty tag"
             exit 1
           fi
+          if ! printf '%s' "$TAG" | grep -Eq "$TAG_ALLOWLIST"; then
+            echo "Error: tag '$TAG' does not match allowlist $TAG_ALLOWLIST"
+            exit 1
+          fi
           # APP_VERSION / ldflags: strip leading v only
           VERSION="${TAG#v}"
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-plus(\.[a-zA-Z0-9.]+)?$'; then
+            echo "Error: version '$VERSION' failed secondary allowlist"
+            exit 1
+          fi
           IS_RC="false"
           case "$VERSION" in
             *-rc*|*.rc*|*rc.*) IS_RC="true" ;;
@@ -95,24 +117,40 @@ jobs:
             echo "is_rc=$IS_RC"
             echo "dry_run=$DRY_RUN"
             echo "push_images=$PUSH_IMAGES"
+            echo "checkout_ref=$CHECKOUT_REF"
           } >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG version=$VERSION is_rc=$IS_RC dry_run=$DRY_RUN push_images=$PUSH_IMAGES"
+          echo "tag=$TAG version=$VERSION is_rc=$IS_RC dry_run=$DRY_RUN push_images=$PUSH_IMAGES checkout_ref=$CHECKOUT_REF"
 
   images:
     name: Build & push images
     needs: [meta]
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.meta.outputs.checkout_ref }}
 
       - name: Set APP_VERSION
         shell: bash
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
         run: |
           set -euo pipefail
-          VERSION="${{ needs.meta.outputs.version }}"
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-plus(\.[a-zA-Z0-9.]+)?$'; then
+            echo "Error: VERSION failed allowlist: $VERSION"
+            exit 1
+          fi
           sed -i "s/export const APP_VERSION = \".*\";/export const APP_VERSION = \"$VERSION\";/" server/lib/consts.ts
+          if ! grep -q "export const APP_VERSION = \"$VERSION\";" server/lib/consts.ts; then
+            echo "Error: APP_VERSION rewrite failed (pattern miss or file changed)"
+            grep APP_VERSION server/lib/consts.ts || true
+            exit 1
+          fi
           grep APP_VERSION server/lib/consts.ts
 
       - name: Set up QEMU
@@ -140,13 +178,11 @@ jobs:
           IMAGE_PREFIX: ${{ env.IMAGE_PREFIX }}
         run: |
           set -euo pipefail
-          # Multi-arch on real push; amd64-only smoke on dry_run (QEMU multi-arch is slow)
           if [ "$PUSH" = "true" ]; then
             echo "list=linux/amd64,linux/arm64" >> "$GITHUB_OUTPUT"
           else
             echo "list=linux/amd64" >> "$GITHUB_OUTPUT"
           fi
-          # Multiline tag lists without empty lines (RC / dry_run skip :latest)
           for name in pangolin gerbil newt olm; do
             {
               echo "${IMAGE_PREFIX}/${name}:${TAG}"
@@ -157,9 +193,6 @@ jobs:
                 echo "${IMAGE_PREFIX}/${name}:latest"
               fi
             } > "/tmp/tags-${name}.txt"
-            # Expose as single-line CSV for build-push-action (newline → comma)
-            tr '\n' ',' < "/tmp/tags-${name}.txt" | sed 's/,$/\n/' > "/tmp/tags-${name}.csv"
-            # Also write GITHUB_OUTPUT multiline
             {
               echo "tags_${name}<<EOF"
               cat "/tmp/tags-${name}.txt"
@@ -238,9 +271,13 @@ jobs:
     needs: [meta]
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.meta.outputs.checkout_ref }}
 
       - name: Install Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -251,8 +288,36 @@ jobs:
             components/olm/go.sum
             components/gerbil/go.sum
 
+      - name: Syntax-check install scripts
+        run: |
+          set -euo pipefail
+          sh -n scripts/get-plus-newt.sh
+          sh -n scripts/get-plus-olm.sh
+          sh -n scripts/get-plus-gerbil.sh
+          echo "sh -n: OK"
+
       - name: Build release binaries
-        run: make plus-release-binaries VERSION=${{ needs.meta.outputs.version }}
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-plus(\.[a-zA-Z0-9.]+)?$'; then
+            echo "Error: VERSION failed allowlist: $VERSION"
+            exit 1
+          fi
+          make plus-release-binaries VERSION="$VERSION"
+
+      - name: Smoke --version (linux amd64)
+        run: |
+          set -euo pipefail
+          ./dist/plus/newt_linux_amd64 --version
+          ./dist/plus/olm_linux_amd64 --version
+          test -x ./dist/plus/gerbil_linux_amd64
+          test -f ./dist/plus/SHA256SUMS
+          # Expect full multi-OS matrix (newt 10 + olm 8 + gerbil 2 = 20)
+          count=$(find dist/plus -type f ! -name SHA256SUMS | wc -l)
+          echo "asset count=$count"
+          test "$count" -ge 18
 
       - name: List dist/plus
         run: ls -la dist/plus/
@@ -267,12 +332,21 @@ jobs:
 
   release:
     name: GitHub Release
+    # Binary release proceeds even if images fail (clients still need assets).
     needs: [meta, images, binaries]
-    if: needs.meta.outputs.dry_run != 'true'
+    if: >-
+      always()
+      && needs.meta.result == 'success'
+      && needs.binaries.result == 'success'
+      && needs.meta.outputs.dry_run != 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.meta.outputs.checkout_ref }}
 
       - name: Download binaries
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
@@ -287,20 +361,31 @@ jobs:
           VERSION: ${{ needs.meta.outputs.version }}
           IMAGE_PREFIX: ${{ env.IMAGE_PREFIX }}
           IS_RC: ${{ needs.meta.outputs.is_rc }}
+          IMAGES_RESULT: ${{ needs.images.result }}
         run: |
           set -euo pipefail
           LATEST_NOTE=""
           if [ "$IS_RC" != "true" ]; then
-            LATEST_NOTE="- Also tagged \`:latest\` on GHCR"
+            LATEST_NOTE="- Also tagged \`:latest\` on GHCR (when images job succeeded)"
           else
             LATEST_NOTE="- RC release: no \`:latest\` tag"
+          fi
+          IMAGES_NOTE=""
+          if [ "$IMAGES_RESULT" != "success" ]; then
+            IMAGES_NOTE="
+          > **Note:** container image job result was \`${IMAGES_RESULT}\`. Binary assets below are still published; re-run the workflow or fix images if GHCR tags are missing.
+          "
           fi
           cat > /tmp/release-notes.md << EOF
           ## pangolin-plus ${TAG}
 
           Community plus monorepo release. Stock fosrl clients/images do **not** include plus deltas.
-
+          ${IMAGES_NOTE}
           ### Container images (GHCR)
+
+          Packages default to **private** on first publish. Maintainer: GitHub → Packages → each of
+          \`pangolin\`, \`gerbil\`, \`newt\`, \`olm\` → Package settings → Change visibility → **Public**
+          (required for anonymous \`docker pull\`).
 
           \`\`\`bash
           docker pull ${IMAGE_PREFIX}/pangolin:${TAG}
@@ -309,13 +394,14 @@ jobs:
           docker pull ${IMAGE_PREFIX}/olm:${TAG}
           \`\`\`
 
-          Compose overrides:
+          Compose (pull published; do not rebuild):
 
           \`\`\`bash
           export PANGOLIN_IMAGE=${IMAGE_PREFIX}/pangolin:${TAG}
           export GERBIL_IMAGE=${IMAGE_PREFIX}/gerbil:${TAG}
           export NEWT_IMAGE=${IMAGE_PREFIX}/newt:${TAG}
-          docker compose -f compose.plus.yaml up -d
+          docker compose -f compose.plus.yaml pull
+          docker compose -f compose.plus.yaml up -d --no-build
           \`\`\`
 
           ${LATEST_NOTE}
@@ -323,25 +409,25 @@ jobs:
           ### Client binaries
 
           Assets use upstream naming (\`newt_linux_amd64\`, \`olm_darwin_arm64\`, …).
-          Install installed name is still \`newt\` / \`olm\` / \`gerbil\`.
+          Installed name is still \`newt\` / \`olm\` / \`gerbil\`. Checksums: \`SHA256SUMS\`.
 
           | Component | Role | Example asset |
           |-----------|------|---------------|
           | newt | Site connector | \`newt_linux_amd64\` |
-          | olm | End-user client | \`olm_linux_amd64\` |
-          | gerbil | WG edge helper | \`gerbil_linux_amd64\` (linux only) |
-
-          Quick install scripts (from this monorepo):
+          | olm | End-user client | \`olm_linux_amd64\` (no FreeBSD assets) |
+          | gerbil | WG edge (controller) | \`gerbil_linux_amd64\` — **container-first**; binary optional |
 
           \`\`\`bash
           curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-newt.sh | sh
           curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-olm.sh | sh
+          # Optional host binary (prefer container for controller edge):
+          # curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-gerbil.sh | sh
           # Pin: VERSION=${TAG} sh get-plus-newt.sh
           \`\`\`
 
           ### Badger
 
-          Traefik plugin source only — use monorepo \`components/badger\` / deploy playbooks as \`localPlugins\`. Not a release binary or long-running image.
+          Traefik plugin source only — monorepo \`components/badger\` / deploy playbooks as \`localPlugins\`.
 
           ### Build from source
 
@@ -351,7 +437,6 @@ jobs:
           make plus-release-binaries VERSION=${VERSION}
           \`\`\`
           EOF
-          # strip leading spaces from heredoc indent
           sed -i 's/^          //' /tmp/release-notes.md
           cat /tmp/release-notes.md
 
