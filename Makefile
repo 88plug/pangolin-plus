@@ -546,12 +546,14 @@ PLUS_BUILD_VERSION = $(if $(VERSION),$(VERSION),$(PLUS_TAG))
 	plus-images plus-images-push plus-image-pangolin plus-image-gerbil \
 	plus-image-newt plus-image-olm plus-check-vars plus-check-docker
 
-# Shared guards for image tags (empty / unsafe)
+# Shared guards for image tags (empty / unsafe chars in tag vars + retag source)
 define plus-assert-tag-vars
 	@if [ -z "$(PLUS_REGISTRY)" ]; then echo "Error: PLUS_REGISTRY is empty"; exit 1; fi
 	@if [ -z "$(PLUS_TAG)" ]; then echo "Error: PLUS_TAG is empty"; exit 1; fi
-	@case "$(PLUS_REGISTRY)$(PLUS_TAG)$(VERSION)" in \
-		*[\'\"\\\;\|\$$\`\ \	]*) echo "Error: PLUS_REGISTRY/PLUS_TAG/VERSION contains unsafe chars"; exit 1;; \
+	@if [ -z "$(PLUS_LOCAL_REGISTRY)" ]; then echo "Error: PLUS_LOCAL_REGISTRY is empty"; exit 1; fi
+	@if [ -z "$(PLUS_LOCAL_TAG)" ]; then echo "Error: PLUS_LOCAL_TAG is empty"; exit 1; fi
+	@case "$(PLUS_REGISTRY)$(PLUS_TAG)$(VERSION)$(PLUS_LOCAL_REGISTRY)$(PLUS_LOCAL_TAG)" in \
+		*[\'\"\\\;\|\$$\`\ \	]*) echo "Error: PLUS_REGISTRY/PLUS_TAG/VERSION/PLUS_LOCAL_* contains unsafe chars"; exit 1;; \
 	esac
 endef
 
@@ -659,7 +661,7 @@ plus-images-push: plus-check-vars plus-check-docker
 		exit 1; \
 	fi
 	@case "$(PLUS_REGISTRY)" in \
-		fosrl|fosrl/*|docker.io/fosrl|docker.io/fosrl/*) \
+		fosrl|fosrl/*|docker.io/fosrl|docker.io/fosrl/*|ghcr.io/fosrl|ghcr.io/fosrl/*) \
 			echo "Error: refuse push to upstream fosrl namespace"; exit 1;; \
 	esac
 	@# Prefer images already tagged for the push dest; else retag from local defaults

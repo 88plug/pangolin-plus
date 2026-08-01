@@ -47,12 +47,17 @@ Playbooks default to **plus local tags** (same as `compose.plus.yaml` / `make pl
 
 ### Plus-built (recommended for mined fixes)
 
+Stock `fosrl/*` does **not** carry monorepo deltas. Build plus artifacts first:
+
 ```bash
-# On a machine with this monorepo + Docker:
+# Binaries (site newt / user olm):
+make components-build
+
+# Controller + edge images (local tags):
 make plus-images
 # Load/transfer images to the VPS, then run the playbook with defaults.
-# Or push:
-make plus-images plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus PLUS_TAG=1.21.1-plus
+# Or push then pull:
+make plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus PLUS_TAG=1.21.1-plus
 ```
 
 ```yaml
@@ -64,11 +69,15 @@ pull_images: true
 
 ### Upstream stock fallback
 
+Override **image names** (not only `image_registry`) and enable pull:
+
 ```yaml
 pangolin_image: fosrl/pangolin:1.21.1
 gerbil_image: fosrl/gerbil:latest
 pull_images: true
 ```
+
+The local-only guard rejects `pull_images: true` when `pangolin_image` / `gerbil_image` match `^pangolin-plus/` (Hub cannot supply those tags). Explicit `fosrl/*` names work even if `image_registry` stays at the default.
 
 ### What is *not* a deploy service
 
@@ -76,15 +85,15 @@ pull_images: true
 |-----------|---------------|------------|
 | **newt** | Each **site** host | `make -C components/newt local` → `bin/newt` |
 | **olm** | End-user devices | `make -C components/olm local` → `bin/olm` |
-| **badger** | Traefik localPlugins | `pangolin.yml` copies monorepo `components/badger` when present; else clones **fosrl/badger v1.5.0**. Simple playbooks pin catalog plugin **v1.5.0**. |
+| **badger** | Traefik **localPlugins** | All playbooks copy monorepo `components/badger` when present; else clone **fosrl/badger v1.5.0**. Not a long-running image. |
 
-You only get plus newt/olm fixes when those hosts run binaries built from this tree.
+You only get plus newt/olm/badger fixes when those hosts run artifacts built from this tree (or monorepo-sourced localPlugins).
+
+Traefik is pinned to **v3.7** (matches `compose.plus.yaml` / installer).
 
 ### Preflight
 
-When `pull_images: false` (default), playbooks `docker image inspect` `pangolin_image` and `gerbil_image` before `compose up`. Missing images fail with a pointer to `make plus-images` / load. Health wait no longer ignores errors.
-
-`pull_images: true` with `image_registry: pangolin-plus` is rejected (avoids accidental Docker Hub pull of a local-only name).
+When `pull_images: false` (default), playbooks `docker image inspect` `pangolin_image` and `gerbil_image` before `compose up`. Missing images fail with a pointer to `make plus-images` / load. Health wait fails the play if never healthy.
 ## PEM upload in the dashboard
 
 pangolin-plus adds **Domain → Custom Certificate** so you can paste Origin PEMs after install instead of only at Ansible time. Files land under `traefik.certificates_path`.

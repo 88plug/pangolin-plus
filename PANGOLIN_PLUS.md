@@ -73,9 +73,10 @@ So pangolin-plus is:
 - remoteConfigURL path sanitize (bandwidth 400s) · Stop() stopOnce · olm WS re-register · badger real-IP header chain
 
 **Distribution**
-- `compose.plus.yaml` builds pangolin + gerbil from this monorepo; newt via profile `lab`
+- `compose.plus.yaml` builds pangolin + gerbil from this monorepo; newt via profile `lab` (restart `"no"` until NEWT_ID/SECRET set)
 - `make components-build` → newt + gerbil + olm binaries; `make plus-images` → `pangolin-plus/*:local`
-- Ansible `deploy/` parameterized for plus images or fosrl fallback
+- Ansible `deploy/` defaults to plus local tags + monorepo badger localPlugins; fosrl fallback via image name overrides
+- Traefik pin: **v3.7** (compose + deploy + installer)
 
 ---
 
@@ -87,11 +88,12 @@ So pangolin-plus is:
 | Gerbil image | `fosrl/gerbil:latest` | `pangolin-plus/gerbil:local` |
 | Newt | Docker Hub + `get-newt.sh` | `components/newt/bin/newt` or `pangolin-plus/newt:local` |
 | Olm | Docker Hub + desktop apps | `components/olm/bin/olm` (client binary, not compose) |
-| Badger | Traefik plugin / git tag | `components/badger` as localPlugins |
+| Badger | Traefik plugin catalog / git tag | `components/badger` as Traefik **localPlugins** (all deploy playbooks prefer monorepo) |
 
-**Full plus stack:** build images from this tree and run plus newt/olm on site/user hosts.  
-**Stock clients:** fine for smoke tests against a plus server, but **you will not get mined newt/olm fixes** until those hosts run plus-built binaries.
+**Full plus stack:** build images from this tree and run plus newt/olm on site/user hosts; deploy mounts monorepo badger.  
+**Stock clients:** fine for smoke tests against a plus server, but **you will not get mined newt/olm/badger fixes** until those hosts run plus-built binaries / monorepo localPlugins.
 
+**fosrl deploy fallback:** `pangolin_image=fosrl/pangolin:1.21.1` `gerbil_image=fosrl/gerbil:latest` `pull_images=true` (guard keys on image **names**, not `image_registry`).
 ---
 
 ## Feature matrix
@@ -305,11 +307,13 @@ make components-test
 
 # Local Docker images: pangolin-plus/{pangolin,gerbil,newt,olm}:local
 make plus-images
-# Optional: make plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus
+# Optional push (refuses fosrl / ghcr.io/fosrl namespaces):
+# make plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus PLUS_TAG=local
 
-# Compose edge stack
+# Compose edge stack (traefik:v3.7)
 docker compose -f compose.plus.yaml up -d --build
-# Lab newt: NEWT_ID=... NEWT_SECRET=... docker compose -f compose.plus.yaml --profile lab up -d
+# Lab newt (requires NEWT_ID + NEWT_SECRET; does not restart-loop without them):
+# NEWT_ID=... NEWT_SECRET=... docker compose -f compose.plus.yaml --profile lab up -d
 ```
 
 | Gate | Status |

@@ -24,7 +24,7 @@ Nested `.git` dirs are removed so history is the single product `main` branch on
 | Olm images/binaries | `fosrl/olm` + desktop apps on pangolin.net | `components/olm/bin/olm` or `pangolin-plus/olm:local` |
 | Badger | Traefik plugin catalog / git tag | `components/badger` as **localPlugins** (not a long-running image) |
 
-Stock clients work against a plus **server**, but you **must** run plus-built newt/olm to get the mined client fixes in the table above.
+Stock clients work against a plus **server**, but you **must** run plus-built newt/olm (and monorepo badger localPlugins) to get the mined client/plugin fixes in the table above. Binary names stay `newt` / `olm` / `gerbil`; image tags are `pangolin-plus/*` (or your registry).
 
 ### Build (from repo root)
 
@@ -35,13 +35,13 @@ make components-test
 
 # Local Docker images (pangolin-plus/*:local)
 make plus-images
-# Optional registry push (explicit registry required):
+# Optional registry push (explicit registry required; refuses fosrl/*):
 # make plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus PLUS_TAG=local
 
 # Or compose contexts:
 docker compose -f compose.plus.yaml build
 docker compose -f compose.plus.yaml up -d
-# Lab site connector:
+# Lab site connector (requires NEWT_ID + NEWT_SECRET; restart policy is "no"):
 # NEWT_ID=... NEWT_SECRET=... docker compose -f compose.plus.yaml --profile lab up -d
 ```
 
@@ -50,7 +50,9 @@ docker compose -f compose.plus.yaml up -d
 | `make components-build` | `newt`, `gerbil`, `olm` binaries under `components/*/bin/` |
 | `make plus-images` | Docker tags `pangolin-plus/{pangolin,gerbil,newt,olm}:local` |
 | `make -C components/olm local` | User client only (not a compose service) |
-| badger | Plugin source only — wire Traefik `localPlugins` |
+| badger | Plugin source only — deploy playbooks mount as Traefik `localPlugins` |
+
+**fosrl stock fallback (deploy):** set `pangolin_image=fosrl/pangolin:1.21.1`, `gerbil_image=fosrl/gerbil:latest`, `pull_images=true`. See [deploy/README.md](../deploy/README.md).
 
 ### Provenance of newt deltas
 

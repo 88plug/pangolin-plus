@@ -81,6 +81,7 @@ services:
   # Optional lab site connector built from this monorepo (plus newt deltas).
   # Fail-closed: container exits immediately if NEWT_ID/NEWT_SECRET are empty
   # (Compose cannot use ${VAR:?} here — it interpolates even when profile is off).
+  # restart: "no" — do not restart-loop when creds are missing; re-up after export.
   #   export NEWT_ID=... NEWT_SECRET=...
   #   docker compose -f compose.plus.yaml --profile lab up -d
   # Production: install the binary on each site host instead of this service:
@@ -92,7 +93,7 @@ services:
       dockerfile: Dockerfile
     image: ${NEWT_IMAGE:-pangolin-plus/newt:local}
     container_name: newt-lab
-    restart: unless-stopped
+    restart: "no"
     depends_on:
       pangolin:
         condition: service_healthy

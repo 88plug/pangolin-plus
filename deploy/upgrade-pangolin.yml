@@ -21,7 +21,7 @@
     # Image versions (use 'latest' or pin to specific version)
     pangolin_version: "latest"
     gerbil_version: "latest"
-    traefik_version: "v3.4"
+    traefik_version: "v3.7"
 
     # Health check settings
     health_check_retries: 30

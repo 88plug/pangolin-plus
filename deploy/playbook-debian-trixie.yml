@@ -149,6 +149,28 @@
         - "{{ pangolin_dir }}/config"
         - "{{ pangolin_dir }}/config/traefik"
         - "{{ pangolin_dir }}/config/letsencrypt"
+        - "{{ pangolin_dir }}/plugins-storage"
+        - "{{ pangolin_dir }}/plugins-local/src/github.com/fosrl"
+
+    # Prefer monorepo plus badger (mined real-IP); else fosrl tag v1.5.0.
+    - name: Check for monorepo badger source
+      local_action: stat path={{ playbook_dir }}/../components/badger/go.mod
+      register: monorepo_badger
+      become: false
+
+    - name: Install Badger plugin from monorepo
+      when: monorepo_badger.stat.exists
+      copy:
+        src: "{{ playbook_dir }}/../components/badger/"
+        dest: "{{ pangolin_dir }}/plugins-local/src/github.com/fosrl/badger/"
+
+    - name: Pre-download Badger plugin from fosrl v1.5.0
+      when: not monorepo_badger.stat.exists
+      shell: |
+        cd {{ pangolin_dir }}/plugins-local/src/github.com/fosrl
+        git clone --depth 1 --branch v1.5.0 https://github.com/fosrl/badger.git
+      args:
+        creates: "{{ pangolin_dir }}/plugins-local/src/github.com/fosrl/badger/go.mod"
 
     - name: Deploy docker-compose.yml
       copy:
@@ -190,7 +212,7 @@
                 - "80:80"
 
             traefik:
-              image: traefik:v3.4.0
+              image: traefik:v3.7
               container_name: traefik
               restart: unless-stopped
               network_mode: service:gerbil
@@ -199,9 +221,13 @@
                   condition: service_healthy
               command:
                 - --configFile=/etc/traefik/traefik_config.yml
+              environment:
+                - XDG_DATA_HOME=/plugins-storage
               volumes:
                 - ./config/traefik:/etc/traefik:ro
                 - ./config/letsencrypt:/letsencrypt
+                - ./plugins-storage:/plugins-storage
+                - ./plugins-local:/plugins-local:ro
 
           networks:
             default:
@@ -246,11 +272,11 @@
               pollInterval: "5s"
             file:
               filename: "/etc/traefik/dynamic_config.yml"
+          # localPlugins: monorepo components/badger when present, else fosrl v1.5.0 clone
           experimental:
-            plugins:
+            localPlugins:
               badger:
                 moduleName: "github.com/fosrl/badger"
-                version: "v1.5.0"
           log:
             level: "INFO"
           certificatesResolvers:

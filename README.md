@@ -58,15 +58,19 @@ make components-test
 
 ### Full plus stack images
 
+Clients need **plus-built** images/binaries for mined deltas — stock `fosrl/*` does not carry them.
+
 ```bash
 # Local tags: pangolin-plus/{pangolin,gerbil,newt,olm}:local
 make plus-images
+# Optional push (your registry only):
+# make plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus PLUS_TAG=local
 
-# Or compose (pangolin + gerbil + traefik from this tree)
+# Or compose (pangolin + gerbil + traefik v3.7 from this tree)
 docker compose -f compose.plus.yaml build
 docker compose -f compose.plus.yaml up -d
 
-# Optional lab newt against the controller:
+# Optional lab newt against the controller (needs NEWT_ID + NEWT_SECRET):
 # export NEWT_ID=... NEWT_SECRET=...
 # docker compose -f compose.plus.yaml --profile lab up -d
 ```
@@ -77,22 +81,22 @@ docker compose -f compose.plus.yaml up -d
 | gerbil | WG edge on controller | compose / `make plus-images` |
 | newt | Site connector | site host binary or compose profile `lab` |
 | olm | End-user client | `make -C components/olm local` (not a compose service) |
-| badger | Traefik plugin | localPlugins, not a long-running image |
+| badger | Traefik plugin | monorepo `components/badger` as localPlugins (not a long-running image) |
 
-**When you must use plus-built newt/olm:** any mined client fix (reconnect, registration, prefer-local-routes, etc.). Stock `fosrl/*` or pangolin.net apps will not include those deltas.
+**When you must use plus-built newt/olm/badger:** any mined client/plugin fix (reconnect, registration, prefer-local-routes, real-IP, etc.). Stock `fosrl/*` or pangolin.net apps will not include those deltas. Binary names stay `newt`/`olm`/`gerbil`; image tags are `pangolin-plus/*`.
 
 ### Ansible VPS
 
 ```bash
 cd deploy
 cp inventory.ini.example inventory.ini
-# configure domain / cert_mode / images (defaults: pangolin-plus/*:local)
+# configure domain / cert_mode / images (defaults: pangolin-plus/*:local, pull_images: false)
 ansible-playbook -i inventory.ini pangolin.yml
 ```
 
-Upstream stock images: set `pangolin_image=fosrl/pangolin:1.21.1`, `gerbil_image=fosrl/gerbil:latest`, `pull_images=true`.  
+Upstream stock images (override **names** + pull):  
+`pangolin_image=fosrl/pangolin:1.21.1` `gerbil_image=fosrl/gerbil:latest` `pull_images=true`.  
 Details: [deploy/README.md](deploy/README.md). Ops: [deploy/TROUBLESHOOTING.md](deploy/TROUBLESHOOTING.md).
-
 ---
 
 ## What plus adds (short)
