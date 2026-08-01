@@ -1,9 +1,6 @@
 /**
- * On-disk layout for OSS custom TLS certs (TraefikConfigManager.scanLocalCertificateState):
- *   {certificates_path}/{baseDomain}/cert.pem
- *   {certificates_path}/{baseDomain}/key.pem
- *   {certificates_path}/{baseDomain}/.last_update
- *   {certificates_path}/{baseDomain}/.wildcard   (optional)
+ * I/O helpers for OSS custom TLS certs (org resolve, write PEM, dynamic config).
+ * Pure path layout lives in localCertPaths (safe for TraefikConfigManager).
  */
 import config from "@server/lib/config";
 import * as fsSync from "fs";
@@ -12,39 +9,27 @@ import path from "path";
 import * as yaml from "js-yaml";
 import { db, domains, orgDomains } from "@server/db";
 import { and, eq } from "drizzle-orm";
+import {
+    pathsForDomainRoot,
+    readWildcardFlag,
+    writeWildcardFlag,
+    type LocalCertPaths
+} from "@server/lib/certificates/localCertPaths";
 
 export {
     isPemCertificate,
     isPemPrivateKey
 } from "@server/lib/certificates/localCertPem";
 
-export type LocalCertPaths = {
-    domainName: string;
-    domainDir: string;
-    certPath: string;
-    keyPath: string;
-    lastUpdatePath: string;
-    wildcardPath: string;
-};
+export {
+    pathsForDomainRoot,
+    readWildcardFlag,
+    writeWildcardFlag,
+    type LocalCertPaths
+} from "@server/lib/certificates/localCertPaths";
 
 export function getCertificatesRoot(): string | null {
     return config.getRawConfig().traefik.certificates_path ?? null;
-}
-
-/** Build on-disk paths under an explicit certificates root (no config read). */
-export function pathsForDomainRoot(
-    certificatesRoot: string,
-    baseDomain: string
-): LocalCertPaths {
-    const domainDir = path.join(certificatesRoot, baseDomain);
-    return {
-        domainName: baseDomain,
-        domainDir,
-        certPath: path.join(domainDir, "cert.pem"),
-        keyPath: path.join(domainDir, "key.pem"),
-        lastUpdatePath: path.join(domainDir, ".last_update"),
-        wildcardPath: path.join(domainDir, ".wildcard")
-    };
 }
 
 export function pathsForDomain(baseDomain: string): LocalCertPaths {
@@ -110,7 +95,7 @@ export function readLocalCertStatus(baseDomain: string): LocalCertStatus {
     return {
         exists,
         lastUpdate,
-        wildcard: exists && fsSync.existsSync(paths.wildcardPath)
+        wildcard: exists && readWildcardFlag(paths.wildcardPath)
     };
 }
 
@@ -132,7 +117,6 @@ export async function writeLocalCertPem(opts: {
     assertPemSize(opts.keyPem, "private key");
 
     const paths = pathsForDomain(opts.baseDomain);
-    // Contain domain dir under certificates_path (reject path traversal in baseDomain)
     const root = path.resolve(getCertificatesRoot()!);
     const domainDir = path.resolve(paths.domainDir);
     if (domainDir !== root && !domainDir.startsWith(root + path.sep)) {
@@ -140,7 +124,6 @@ export async function writeLocalCertPem(opts: {
     }
 
     await fs.mkdir(paths.domainDir, { recursive: true });
-    // mode on writeFile only applies on create; chmod after so overwrites stay correct
     await fs.writeFile(paths.certPath, opts.certPem);
     await fs.writeFile(paths.keyPath, opts.keyPem);
     await fs.chmod(paths.certPath, 0o644);
@@ -150,17 +133,7 @@ export async function writeLocalCertPem(opts: {
 
     const isWildcard =
         opts.wildcard === true || opts.baseDomain.startsWith("*.");
-    if (isWildcard) {
-        await fs.writeFile(paths.wildcardPath, "true");
-        await fs.chmod(paths.wildcardPath, 0o644);
-    } else {
-        // Clear sticky wildcard from a prior upload
-        try {
-            await fs.unlink(paths.wildcardPath);
-        } catch {
-            // no prior marker
-        }
-    }
+    writeWildcardFlag(paths.wildcardPath, isWildcard);
     return paths;
 }
 

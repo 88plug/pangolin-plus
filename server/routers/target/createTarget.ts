@@ -12,10 +12,7 @@ import HttpCode from "@server/types/HttpCode";
 import createHttpError from "http-errors";
 import logger from "@server/logger";
 import { addPeer } from "../gerbil/peers";
-import {
-    applyRoutingModeToAllowedIps,
-    asRoutingMode
-} from "@server/lib/tunnels/tunnelProfiles";
+import { buildWireguardAllowedIps } from "@server/lib/tunnels/tunnelProfiles";
 import { isIpInCidr } from "@server/lib/ip";
 import { fromError } from "zod-validation-error";
 import { addTargets } from "../newt/targets";
@@ -386,13 +383,11 @@ export async function createTarget(
 
         if (site.pubKey) {
             if (site.type == "wireguard") {
-                const base = site.subnet
-                    ? [site.subnet, ...targetIps.flat()]
-                    : targetIps.flat();
-                const allowedIps = applyRoutingModeToAllowedIps(
-                    base,
-                    asRoutingMode(site.routingMode)
-                );
+                const allowedIps = buildWireguardAllowedIps({
+                    subnet: site.subnet,
+                    targetIps: targetIps.flat(),
+                    routingMode: site.routingMode
+                });
                 await addPeer(site.exitNodeId!, {
                     publicKey: site.pubKey,
                     allowedIps

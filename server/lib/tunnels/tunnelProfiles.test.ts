@@ -2,6 +2,7 @@ import { assertEquals } from "../../../test/assert";
 import {
     defaultsForTunnelProfile,
     applyRoutingModeToAllowedIps,
+    buildWireguardAllowedIps,
     resolveTunnelFields,
     asRoutingMode
 } from "./tunnelProfiles";
@@ -65,5 +66,15 @@ assertEquals(
     "selective",
     "non-wg forced selective"
 );
+
+const built = buildWireguardAllowedIps({
+    subnet: "10.0.0.1/32",
+    targetIps: ["192.168.1.0/24"],
+    routingMode: "full-tunnel"
+});
+assertEquals(built.includes("10.0.0.1/32"), true, "builder keeps subnet");
+assertEquals(built.includes("192.168.1.0/24"), true, "builder keeps targets");
+assertEquals(built.includes("0.0.0.0/0"), true, "builder full IPv4");
+assertEquals(built.includes("::/0"), true, "builder full IPv6");
 
 console.log("tunnelProfiles.test.ts: all assertions passed");

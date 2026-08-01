@@ -9,10 +9,7 @@ import createHttpError from "http-errors";
 import logger from "@server/logger";
 import { fromError } from "zod-validation-error";
 import { addPeer } from "../gerbil/peers";
-import {
-    applyRoutingModeToAllowedIps,
-    asRoutingMode
-} from "@server/lib/tunnels/tunnelProfiles";
+import { buildWireguardAllowedIps } from "@server/lib/tunnels/tunnelProfiles";
 import { addTargets } from "../newt/targets";
 import {
     fireHealthCheckHealthyAlert,
@@ -360,13 +357,11 @@ export async function updateTarget(
 
         if (site.pubKey) {
             if (site.type == "wireguard") {
-                const base = site.subnet
-                    ? [site.subnet, ...targetIps.flat()]
-                    : targetIps.flat();
-                const allowedIps = applyRoutingModeToAllowedIps(
-                    base,
-                    asRoutingMode(site.routingMode)
-                );
+                const allowedIps = buildWireguardAllowedIps({
+                    subnet: site.subnet,
+                    targetIps: targetIps.flat(),
+                    routingMode: site.routingMode
+                });
                 await addPeer(site.exitNodeId!, {
                     publicKey: site.pubKey,
                     allowedIps

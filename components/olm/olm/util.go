@@ -8,21 +8,32 @@ import (
 )
 
 // waitForHolePunchSettle waits up to d, returning false if ctx is cancelled
-// or tunnelRunning becomes false (interruptible alternative to time.Sleep).
+// or tunnelRunning becomes false mid-wait (polls so stop does not block full d).
 func waitForHolePunchSettle(ctx context.Context, tunnelRunning *bool, d time.Duration) bool {
-	if ctx == nil {
-		timer := time.NewTimer(d)
-		defer timer.Stop()
-		<-timer.C
-		return tunnelRunning != nil && *tunnelRunning
-	}
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		return tunnelRunning != nil && *tunnelRunning
-	case <-ctx.Done():
+	if tunnelRunning == nil || !*tunnelRunning {
 		return false
+	}
+	const poll = 25 * time.Millisecond
+	deadline := time.Now().Add(d)
+	ticker := time.NewTicker(poll)
+	defer ticker.Stop()
+
+	for {
+		if tunnelRunning == nil || !*tunnelRunning {
+			return false
+		}
+		if !deadline.After(time.Now()) {
+			return *tunnelRunning
+		}
+		if ctx != nil {
+			select {
+			case <-ctx.Done():
+				return false
+			case <-ticker.C:
+			}
+		} else {
+			<-ticker.C
+		}
 	}
 }
 

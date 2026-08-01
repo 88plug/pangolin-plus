@@ -7,10 +7,10 @@
  *   selective   → site subnet + resource target IPs (default)
  *   full-tunnel → above + 0.0.0.0/0 and ::/0 (dual-stack default route)
  */
+import { z } from "zod";
 
 /** Default routes injected for full-tunnel (IPv4 + IPv6). */
 export const FULL_TUNNEL_DEFAULT_ROUTES = ["0.0.0.0/0", "::/0"] as const;
-import { z } from "zod";
 
 export const ROUTING_MODES = ["full-tunnel", "selective"] as const;
 export type RoutingMode = (typeof ROUTING_MODES)[number];
@@ -71,6 +71,21 @@ export function applyRoutingModeToAllowedIps(
         }
     }
     return ips;
+}
+
+/**
+ * Canonical WireGuard peer AllowedIPs: optional site subnet + target IPs + routing mode.
+ * Use from create/update site, create/update target, and gerbil getConfig.
+ */
+export function buildWireguardAllowedIps(opts: {
+    subnet?: string | null;
+    targetIps: string[];
+    routingMode?: string | null;
+}): string[] {
+    const base = opts.subnet
+        ? [opts.subnet, ...opts.targetIps]
+        : [...opts.targetIps];
+    return applyRoutingModeToAllowedIps(base, asRoutingMode(opts.routingMode));
 }
 
 /** Resolve profile + routing for wireguard creates; non-wg always selective/standard. */

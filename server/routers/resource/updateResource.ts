@@ -28,10 +28,7 @@ import { eq, and, ne } from "drizzle-orm";
 import response from "@server/lib/response";
 import HttpCode from "@server/types/HttpCode";
 import createHttpError from "http-errors";
-import {
-    HeaderSchema,
-    headersPassValidation
-} from "@server/lib/headers/headerSchema";
+import { HeaderSchema } from "@server/lib/headers/headerSchema";
 import logger from "@server/logger";
 import { fromError } from "zod-validation-error";
 import config from "@server/lib/config";
@@ -173,20 +170,6 @@ const updateHttpResourceBodySchema = z
             error: "Invalid custom Host Header value. Use domain name format, or save empty to unset custom Host Header."
         }
     )
-    .refine(
-        (data) => {
-            const allHeaders = [
-                ...(data.headers ?? []),
-                ...(data.requestHeaders ?? []),
-                ...(data.responseHeaders ?? [])
-            ];
-            return headersPassValidation(allHeaders);
-        },
-        {
-            error: "Invalid custom header name or value (token chars only; no templates; printable ASCII)."
-        }
-    );
-
 export type UpdateResourceResponse = Resource;
 
 const updateRawResourceBodySchema = z

@@ -22,7 +22,7 @@ import { usageService } from "@server/lib/billing/usageService";
 import { LimitId } from "@server/lib/billing";
 import { generateId } from "@server/auth/sessions/app";
 import {
-    applyRoutingModeToAllowedIps,
+    buildWireguardAllowedIps,
     resolveTunnelFields,
     routingModeSchema,
     tunnelProfileSchema
@@ -539,10 +539,11 @@ export async function createSite(
 
                     // Initial peer; AllowedIPs refined as targets are added.
                     // full-tunnel sites also advertise 0.0.0.0/0 immediately.
-                    const initialAllowed = applyRoutingModeToAllowedIps(
-                        subnet ? [subnet] : [],
+                    const initialAllowed = buildWireguardAllowedIps({
+                        subnet,
+                        targetIps: [],
                         routingMode
-                    );
+                    });
                     await addPeer(exitNodeId, {
                         publicKey: pubKey,
                         allowedIps: initialAllowed

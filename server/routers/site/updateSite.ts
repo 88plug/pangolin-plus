@@ -15,8 +15,7 @@ import { addPeer } from "../gerbil/peers";
 import { getAllowedIps } from "../target/helpers";
 import {
     defaultsForTunnelProfile,
-    applyRoutingModeToAllowedIps,
-    asRoutingMode,
+    buildWireguardAllowedIps,
     routingModeSchema,
     tunnelProfileSchema
 } from "@server/lib/tunnels/tunnelProfiles";
@@ -172,37 +171,30 @@ export async function updateSite(
             ).routingMode;
         }
 
-        const updatedSite = await db
-            .update(sites)
-            .set(updateData)
-            .where(eq(sites.siteId, siteId))
-            .returning();
-
-        // Refresh Gerbil peer AllowedIPs when routing mode / profile changes.
-        // Fail the request if peer refresh fails — DB/Gerbil split is worse than 5xx.
-        if (
-            updatedSite[0] &&
+        const routingChanging =
             existingSite.type === "wireguard" &&
             existingSite.pubKey &&
             existingSite.exitNodeId &&
             (updateData.routingMode !== undefined ||
-                updateData.tunnelProfile !== undefined)
-        ) {
+                updateData.tunnelProfile !== undefined);
+
+        // Peer first, then DB — never leave DB routingMode ahead of Gerbil AllowedIPs.
+        if (routingChanging) {
             try {
-                const base = await getAllowedIps(siteId);
-                const withSubnet = existingSite.subnet
-                    ? [existingSite.subnet, ...base]
-                    : base;
-                const allowedIps = applyRoutingModeToAllowedIps(
-                    withSubnet,
-                    asRoutingMode(updatedSite[0].routingMode)
-                );
-                await addPeer(existingSite.exitNodeId, {
-                    publicKey: existingSite.pubKey,
+                const nextMode =
+                    updateData.routingMode ?? existingSite.routingMode;
+                const targetIps = await getAllowedIps(siteId);
+                const allowedIps = buildWireguardAllowedIps({
+                    subnet: existingSite.subnet,
+                    targetIps,
+                    routingMode: nextMode
+                });
+                await addPeer(existingSite.exitNodeId!, {
+                    publicKey: existingSite.pubKey!,
                     allowedIps
                 });
                 logger.info(
-                    `Updated WireGuard peer allowedIps for site ${siteId} (routingMode=${updatedSite[0].routingMode})`
+                    `Updated WireGuard peer allowedIps for site ${siteId} (routingMode=${nextMode})`
                 );
             } catch (err) {
                 logger.error(
@@ -211,11 +203,17 @@ export async function updateSite(
                 return next(
                     createHttpError(
                         HttpCode.INTERNAL_SERVER_ERROR,
-                        "Site updated in database but Gerbil peer AllowedIPs refresh failed"
+                        "Failed to update Gerbil peer AllowedIPs; site settings not changed"
                     )
                 );
             }
         }
+
+        const updatedSite = await db
+            .update(sites)
+            .set(updateData)
+            .where(eq(sites.siteId, siteId))
+            .returning();
 
         if (updatedSite.length === 0) {
             return next(

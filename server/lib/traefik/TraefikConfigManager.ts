@@ -1,6 +1,10 @@
 import * as fs from "fs";
 import * as path from "path";
-import { pathsForDomainRoot } from "@server/lib/certificates/localCertFs";
+import {
+    pathsForDomainRoot,
+    readWildcardFlag,
+    writeWildcardFlag
+} from "@server/lib/certificates/localCertPaths";
 import config from "@server/lib/config";
 import logger from "@server/logger";
 import * as yaml from "js-yaml";
@@ -177,19 +181,9 @@ export class TraefikConfigManager {
                     }
                 }
 
-                // Check if this is a wildcard certificate
+                // Wildcard marker: content must be "true" (shared with OSS upload)
                 if (wildcardExists) {
-                    try {
-                        const wildcardContent = fs
-                            .readFileSync(wildcardPath, "utf8")
-                            .trim();
-                        wildcard = wildcardContent === "true";
-                    } catch (error) {
-                        logger.warn(
-                            `Could not read wildcard file for ${domain}:`,
-                            error
-                        );
-                    }
+                    wildcard = readWildcardFlag(wildcardPath);
                 }
 
                 state.set(domain, {
@@ -858,12 +852,8 @@ export class TraefikConfigManager {
                         "utf8"
                     );
 
-                    // Check if this is a wildcard certificate and store it
-                    fs.writeFileSync(
-                        wildcardPath,
-                        cert.wildcard ? "true" : "false",
-                        "utf8"
-                    );
+                    // Marker present only when true (matches OSS writeLocalCertPem)
+                    writeWildcardFlag(wildcardPath, !!cert.wildcard);
 
                     logger.info(
                         `Certificate updated for domain: ${cert.domain}${cert.wildcard ? " (wildcard)" : ""}`

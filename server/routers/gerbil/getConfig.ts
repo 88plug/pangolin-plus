@@ -9,10 +9,7 @@ import logger from "@server/logger";
 import config from "@server/lib/config";
 import { fromError } from "zod-validation-error";
 import { getAllowedIps } from "../target/helpers";
-import {
-    applyRoutingModeToAllowedIps,
-    asRoutingMode
-} from "@server/lib/tunnels/tunnelProfiles";
+import { buildWireguardAllowedIps } from "@server/lib/tunnels/tunnelProfiles";
 
 import { createExitNode } from "#dynamic/routers/gerbil/createExitNode";
 
@@ -102,14 +99,11 @@ export async function generateGerbilConfig(exitNode: ExitNode) {
         sitesRes.map(async (site) => {
             if (site.type === "wireguard") {
                 const targetIps = await getAllowedIps(site.siteId);
-                const base = site.subnet
-                    ? [site.subnet, ...targetIps]
-                    : targetIps;
-                // pangolin-plus: routingMode full-tunnel adds 0.0.0.0/0
-                const allowedIps = applyRoutingModeToAllowedIps(
-                    base,
-                    asRoutingMode(site.routingMode)
-                );
+                const allowedIps = buildWireguardAllowedIps({
+                    subnet: site.subnet,
+                    targetIps,
+                    routingMode: site.routingMode
+                });
                 return {
                     publicKey: site.pubKey,
                     allowedIps
