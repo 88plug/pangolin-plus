@@ -169,7 +169,7 @@ const updateHttpResourceBodySchema = z
         {
             error: "Invalid custom Host Header value. Use domain name format, or save empty to unset custom Host Header."
         }
-    )
+    );
 export type UpdateResourceResponse = Resource;
 
 const updateRawResourceBodySchema = z
