@@ -11,9 +11,9 @@ One monorepo product that **mines** [fosrl/pangolin](https://github.com/fosrl/pa
 |------|------|------|-------------|
 | *(repo root)* | Pangolin CE server | **1.21.1** | **Mined** |
 | [`components/newt/`](components/newt/) | Site connector | **1.15.0** | **Mined** |
-| [`components/gerbil/`](components/gerbil/) | WireGuard interface mgr | **1.4.3** | Vendored (mine next) |
-| [`components/olm/`](components/olm/) | Client | **1.8.1** | Vendored (mine next) |
-| [`components/badger/`](components/badger/) | Traefik auth middleware | **v1.5.0** | Vendored (mine next) |
+| [`components/gerbil/`](components/gerbil/) | WireGuard interface mgr | **1.4.3** | **Mined** |
+| [`components/olm/`](components/olm/) | Client | **1.8.1** | **Mined** |
+| [`components/badger/`](components/badger/) | Traefik auth middleware | **v1.5.0** | **Mined** |
 | [`deploy/`](deploy/) | Ansible + ops notes | — | Own work |
 | [`compose.plus.yaml`](compose.plus.yaml) | Build full stack from this tree | — | Own work |
 
@@ -250,14 +250,22 @@ ECOSYSTEM:
 ## DEPENDENCY AUDIT
 
 ```
-DEPENDENCY AUDIT (server):
-  ✅ Auto-applied: (none — 1.21.1 lockfile baseline)
-  ⚠️  Flagged: ncu patch bumps (peer conflicts if applied wholesale)
-  🔴 Major: not auto-applied
+UPSTREAM RELEASES (latest == in-tree):
+  fosrl/pangolin 1.21.1  ·  fosrl/newt 1.15.0  ·  fosrl/gerbil 1.4.3
+  fosrl/olm 1.8.1  ·  fosrl/badger v1.5.0
+  (upstream HEAD matches release tags as of 2026-08-01)
 
-DEPENDENCY AUDIT (newt):
-  ✅ Baseline 1.15.0 green (make test)
-  ⚠️  Open #428 go-deps group / #426 grpc — not auto-applied
+DEPENDENCY AUDIT (server npm — always latest minor/patch):
+  ✅ Applied: ncu --target minor (patch+minor)
+     next 16.2.12 · react/react-dom 19.2.8 · axios 1.19.0 · many radix/aws/query bumps
+  ⚠️  engines: node >=22 <26 (better-sqlite3 has no Node 26 prebuild)
+  🔴 Major NOT applied (judgment): better-sqlite3 13, typescript 7, ioredis 6,
+     zod-to-openapi 9, js-yaml 5, dotenvx 2, react-day-picker 10
+
+DEPENDENCY AUDIT (Go components):
+  ✅ go get -u=patch + tidy on newt/gerbil/olm; builds green
+  ✅ gRPC 1.82.1, x/crypto/net/sys bumps, wireguard tip
+  ⚠️  gvisor pinned to v0.0.0-20250503011706 (newer 20260801 breaks multi-package stack/)
 ```
 
 ---
