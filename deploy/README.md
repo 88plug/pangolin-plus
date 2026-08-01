@@ -94,6 +94,31 @@ Traefik is pinned to **v3.7** (matches `compose.plus.yaml` / installer).
 ### Preflight
 
 When `pull_images: false` (default), playbooks `docker image inspect` `pangolin_image` and `gerbil_image` before `compose up`. Missing images fail with a pointer to `make plus-images` / load. Health wait fails the play if never healthy.
+
+### Safe upgrade (`upgrade-pangolin.yml`)
+
+Defaults rewrite compose images to **stock/registry** tags and pull:
+
+| Var | Default |
+|-----|---------|
+| `pangolin_image` | `fosrl/pangolin:latest` |
+| `gerbil_image` | `fosrl/gerbil:latest` |
+| `traefik_image` | `traefik:v3.7` |
+| `pull_images` | `true` |
+| `resync_badger` | `true` (re-copy monorepo badger when present on control node) |
+
+Plus local upgrade example:
+
+```bash
+ansible-playbook -i inventory.ini upgrade-pangolin.yml \
+  -e pangolin_image=pangolin-plus/pangolin:local \
+  -e gerbil_image=pangolin-plus/gerbil:local \
+  -e pull_images=false
+```
+
+Full plus re-deploy (compose + badger + config): re-run `pangolin.yml`.  
+`pull_images=true` with `pangolin-plus/*` image names is rejected.
+
 ## PEM upload in the dashboard
 
 pangolin-plus adds **Domain → Custom Certificate** so you can paste Origin PEMs after install instead of only at Ansible time. Files land under `traefik.certificates_path`.
@@ -106,6 +131,7 @@ pangolin-plus adds **Domain → Custom Certificate** so you can paste Origin PEM
 | `odoh-wireguard-dns-notes.md` | Force WG clients through ODoH (work in progress) |
 | `playbook-simple.yml` | Minimal Ubuntu one-shot deploy |
 | `playbook-debian-trixie.yml` | Debian Trixie variant |
+| `upgrade-pangolin.yml` | Backup + image pin + optional pull/badger resync |
 
 ## Security
 

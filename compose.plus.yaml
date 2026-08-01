@@ -16,7 +16,7 @@
 #                                  on each site host: make -C components/newt local)
 #   olm                          — end-user client binary only (not a compose service):
 #                                  make -C components/olm local  → components/olm/bin/olm
-#   badger                       — Traefik plugin (localPlugins), not a long-running image
+#   badger                       — Traefik localPlugins from components/badger (not an image)
 
 name: pangolin-plus
 
@@ -74,9 +74,14 @@ services:
         condition: service_healthy
     command:
       - --configFile=/etc/traefik/traefik_config.yml
+    environment:
+      - XDG_DATA_HOME=/plugins-storage
     volumes:
       - ./config/traefik:/etc/traefik:ro
       - ./config/letsencrypt:/letsencrypt
+      # Monorepo mined badger (real-IP) as Traefik localPlugins
+      - ./components/badger:/plugins-local/src/github.com/fosrl/badger:ro
+      - plugins-storage:/plugins-storage
 
   # Optional lab site connector built from this monorepo (plus newt deltas).
   # Fail-closed: container exits immediately if NEWT_ID/NEWT_SECRET are empty
@@ -122,3 +127,6 @@ networks:
     driver: bridge
     name: pangolin-plus
     enable_ipv6: true
+
+volumes:
+  plugins-storage:

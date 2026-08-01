@@ -43,6 +43,10 @@ docker compose -f compose.plus.yaml build
 docker compose -f compose.plus.yaml up -d
 # Lab site connector (requires NEWT_ID + NEWT_SECRET; restart policy is "no"):
 # NEWT_ID=... NEWT_SECRET=... docker compose -f compose.plus.yaml --profile lab up -d
+
+# Guards + syntax/config smoke (no full image rebuild):
+# make plus-guards-selftest
+# make plus-verify
 ```
 
 | Target | Output |
@@ -50,7 +54,8 @@ docker compose -f compose.plus.yaml up -d
 | `make components-build` | `newt`, `gerbil`, `olm` binaries under `components/*/bin/` |
 | `make plus-images` | Docker tags `pangolin-plus/{pangolin,gerbil,newt,olm}:local` |
 | `make -C components/olm local` | User client only (not a compose service) |
-| badger | Plugin source only — deploy playbooks mount as Traefik `localPlugins` |
+| badger | Plugin source — `compose.plus` bind-mounts + deploy copies as Traefik `localPlugins` |
+| `make plus-guards-selftest` | Guard smoke + compose config + ansible syntax-check |
 
 **fosrl stock fallback (deploy):** set `pangolin_image=fosrl/pangolin:1.21.1`, `gerbil_image=fosrl/gerbil:latest`, `pull_images=true`. See [deploy/README.md](../deploy/README.md).
 

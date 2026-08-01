@@ -115,25 +115,46 @@
         - "{{ pangolin_dir }}/plugins-storage"
         - "{{ pangolin_dir }}/plugins-local/src/github.com/fosrl"
 
-    # Prefer monorepo plus badger (mined real-IP); else fosrl tag v1.5.0.
+    # Prefer monorepo plus badger (mined real-IP); else fosrl tag v1.5.0
+    # cloned on the control node (no git required on the VPS).
     - name: Check for monorepo badger source
       local_action: stat path={{ playbook_dir }}/../components/badger/go.mod
       register: monorepo_badger
       become: false
+
+    - name: Warn stock Badger fallback (no plus real-IP)
+      when: not monorepo_badger.stat.exists
+      debug:
+        msg: >-
+          WARNING: monorepo components/badger missing on control node —
+          installing stock fosrl/badger v1.5.0 (no plus real-IP deltas).
+          Run Ansible from a full pangolin-plus checkout for mined badger.
+
+    - name: Clone stock Badger on control node
+      when: not monorepo_badger.stat.exists
+      ansible.builtin.git:
+        repo: https://github.com/fosrl/badger.git
+        version: v1.5.0
+        dest: /tmp/pangolin-plus-badger-v1.5.0
+        depth: 1
+        force: true
+      delegate_to: localhost
+      become: false
+      register: badger_git
 
     - name: Install Badger plugin from monorepo
       when: monorepo_badger.stat.exists
       copy:
         src: "{{ playbook_dir }}/../components/badger/"
         dest: "{{ pangolin_dir }}/plugins-local/src/github.com/fosrl/badger/"
+      register: badger_monorepo
 
-    - name: Pre-download Badger plugin from fosrl v1.5.0
+    - name: Install Badger plugin from control-node stock clone
       when: not monorepo_badger.stat.exists
-      shell: |
-        cd {{ pangolin_dir }}/plugins-local/src/github.com/fosrl
-        git clone --depth 1 --branch v1.5.0 https://github.com/fosrl/badger.git
-      args:
-        creates: "{{ pangolin_dir }}/plugins-local/src/github.com/fosrl/badger/go.mod"
+      copy:
+        src: /tmp/pangolin-plus-badger-v1.5.0/
+        dest: "{{ pangolin_dir }}/plugins-local/src/github.com/fosrl/badger/"
+      register: badger_stock
 
     - name: Deploy docker-compose.yml
       copy:
@@ -353,7 +374,10 @@
       command: docker compose up -d --force-recreate
       args:
         chdir: "{{ pangolin_dir }}"
-      when: compose_cfg.changed or app_cfg.changed or traefik_cfg.changed or dynamic_cfg.changed or (pull is not skipped and pull.changed)
+      when: >-
+        compose_cfg.changed or app_cfg.changed or traefik_cfg.changed or dynamic_cfg.changed
+        or (badger_monorepo is changed) or (badger_stock is changed)
+        or (pull is not skipped and pull.changed)
 
     - name: Ensure containers running
       command: docker compose up -d

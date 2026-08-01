@@ -1,12 +1,23 @@
 ---
-# Pangolin Safe Upgrade - Backup, upgrade, health check, auto-rollback
+# Pangolin Safe Upgrade - Backup, optional image pin, health check, auto-rollback
 # Usage: ansible-playbook -i inventory.ini upgrade-pangolin.yml
+#
+# Defaults target **registry/stock** images (pull_images: true).
+# For plus local tags (pangolin-plus/*:local already loaded on the host):
+#   ansible-playbook -i inventory.ini upgrade-pangolin.yml \
+#     -e pangolin_image=pangolin-plus/pangolin:local \
+#     -e gerbil_image=pangolin-plus/gerbil:local \
+#     -e pull_images=false
+#
+# Full plus re-deploy (compose + badger + config): re-run pangolin.yml instead.
 #
 # Features:
 #   - Pre-upgrade health check (fails if already unhealthy)
 #   - Full config backup with timestamp
 #   - Graceful container stop
-#   - Image pull with retries
+#   - Rewrite compose image lines from vars (pangolin/gerbil/traefik)
+#   - Optional pull (skipped for local-only names; refused if pull + pangolin-plus/*)
+#   - Optional monorepo badger re-sync (localPlugins)
 #   - Post-upgrade health check with timeout
 #   - Auto-generated rollback.sh script
 #   - Backup cleanup (keeps last N backups)
@@ -18,12 +29,15 @@
     backup_dir: "/opt/pangolin/backups"
     backup_retention_count: 5
 
-    # Image versions (use 'latest' or pin to specific version)
-    pangolin_version: "latest"
-    gerbil_version: "latest"
-    traefik_version: "v3.7"
+    # Full image refs written into docker-compose.yml before up
+    pangolin_image: "fosrl/pangolin:latest"
+    gerbil_image: "fosrl/gerbil:latest"
+    traefik_image: "traefik:v3.7"
+    # true = docker compose pull (registry/stock). false = local tags only.
+    pull_images: true
+    # Re-copy monorepo components/badger when present on the control node
+    resync_badger: true
 
-    # Health check settings
     health_check_retries: 30
     health_check_delay: 10
 
@@ -51,6 +65,8 @@
         msg: |
           Pre-upgrade status:
             Health: {{ pre_health.stdout }}
+            Target images: {{ pangolin_image }} / {{ gerbil_image }} / {{ traefik_image }}
+            pull_images: {{ pull_images }}
             Current versions:
           {{ current_versions.stdout | indent(4) }}
 
@@ -58,6 +74,16 @@
       fail:
         msg: "Pangolin is unhealthy ({{ pre_health.stdout }}). Fix issues before upgrading."
       when: pre_health.stdout not in ['healthy', 'not_running']
+
+    - name: Reject Hub pull of local-only pangolin-plus/* image names
+      assert:
+        that:
+          - not (pull_images | bool) or not (pangolin_image is match('^pangolin-plus/'))
+          - not (pull_images | bool) or not (gerbil_image is match('^pangolin-plus/'))
+        fail_msg: >-
+          pull_images=true cannot use local-only image names (pangolin-plus/*).
+          Load images first (make plus-images) and re-run with pull_images=false,
+          or push to a registry and set ghcr.io/... tags with pull_images=true.
 
     - name: Create backup directory
       file:
@@ -89,19 +115,96 @@
         msg: "Backup created: {{ backup_dir }}/pangolin-backup-{{ backup_timestamp }}.tar.gz ({{ backup_stat.stat.size | filesizeformat }})"
 
     - name: Stop containers gracefully
-      shell: cd {{ pangolin_dir }} && docker compose down --timeout 30
+      shell: cd "{{ pangolin_dir }}" && docker compose down --timeout 30
       register: stop_result
       ignore_errors: true
 
+    - name: Rewrite compose service images from vars
+      shell: |
+        python3 - <<'PY'
+        from pathlib import Path
+        import re
+        path = Path("{{ pangolin_dir }}/docker-compose.yml")
+        text = path.read_text()
+        images = {
+            "pangolin": "{{ pangolin_image }}",
+            "gerbil": "{{ gerbil_image }}",
+            "traefik": "{{ traefik_image }}",
+        }
+        for svc, img in images.items():
+            # Match service block key then its first image: line
+            pat = re.compile(
+                r"(?m)^([ \t]*" + re.escape(svc) + r":\s*\n(?:[ \t]+[^\n]*\n)*?[ \t]*image:\s*)([^\n]+)"
+            )
+            text2, n = pat.subn(r"\1" + img, text, count=1)
+            if n == 0:
+                raise SystemExit(f"could not find image line for service {svc} in {path}")
+            text = text2
+        path.write_text(text)
+        print("rewrote images:", images)
+        PY
+      args:
+        executable: /bin/bash
+      register: rewrite_images
+
+    - name: Check for monorepo badger source (control node)
+      when: resync_badger | bool
+      local_action: stat path={{ playbook_dir }}/../components/badger/go.mod
+      register: monorepo_badger
+      become: false
+
+    - name: Ensure plugins-local path for badger
+      when: resync_badger | bool
+      file:
+        path: "{{ pangolin_dir }}/plugins-local/src/github.com/fosrl"
+        state: directory
+        mode: '0755'
+
+    - name: Re-sync Badger plugin from monorepo
+      when:
+        - resync_badger | bool
+        - monorepo_badger.stat.exists | default(false)
+      copy:
+        src: "{{ playbook_dir }}/../components/badger/"
+        dest: "{{ pangolin_dir }}/plugins-local/src/github.com/fosrl/badger/"
+      register: badger_resync
+
+    - name: Warn when monorepo badger missing on upgrade
+      when:
+        - resync_badger | bool
+        - not (monorepo_badger.stat.exists | default(false))
+      debug:
+        msg: >-
+          WARNING: components/badger not found on control node — skipping badger re-sync.
+          Stock localPlugins on the host are left as-is. Re-run from the monorepo
+          checkout for plus real-IP, or re-run pangolin.yml.
+
+    - name: Preflight local images present when not pulling
+      when: not (pull_images | bool)
+      block:
+        - name: Inspect local images
+          command: docker image inspect {{ pangolin_image }} {{ gerbil_image }}
+          register: image_preflight
+          changed_when: false
+          failed_when: false
+        - name: Fail if local images missing
+          when: image_preflight.rc != 0
+          fail:
+            msg: >-
+              Images {{ pangolin_image }} / {{ gerbil_image }} not found on this host.
+              Run make plus-images and load/transfer them, or set pull_images=true
+              with registry image names.
+
     - name: Pull new images
-      shell: cd {{ pangolin_dir }} && docker compose pull
+      when: pull_images | bool
+      shell: cd "{{ pangolin_dir }}" && docker compose pull
       register: pull_result
       retries: 3
       delay: 10
       until: pull_result.rc == 0
 
     - name: Start containers
-      shell: cd {{ pangolin_dir }} && docker compose up -d
+      shell: cd "{{ pangolin_dir }}" && docker compose up -d --force-recreate
       register: start_result
 
     - name: Wait for Pangolin to be healthy
@@ -110,7 +213,7 @@
       until: health.stdout == "healthy"
       retries: "{{ health_check_retries }}"
       delay: "{{ health_check_delay }}"
-      ignore_errors: true
+      # Fail the play if never healthy (do not claim success)
 
     - name: Get post-upgrade container status
       shell: docker ps --format 'table {{ '{{' }}.Names{{ '}}' }}\t{{ '{{' }}.Status{{ '}}' }}\t{{ '{{' }}.Image{{ '}}' }}'
@@ -182,7 +285,7 @@
 
     - name: Clean up old backups (keep last N)
       shell: |
-        cd {{ backup_dir }}
+        cd "{{ backup_dir }}"
         ls -1t pangolin-backup-*.tar.gz 2>/dev/null | tail -n +{{ backup_retention_count + 1 }} | xargs -r rm -f
       changed_when: false
 

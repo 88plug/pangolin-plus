@@ -73,10 +73,11 @@ So pangolin-plus is:
 - remoteConfigURL path sanitize (bandwidth 400s) · Stop() stopOnce · olm WS re-register · badger real-IP header chain
 
 **Distribution**
-- `compose.plus.yaml` builds pangolin + gerbil from this monorepo; newt via profile `lab` (restart `"no"` until NEWT_ID/SECRET set)
+- `compose.plus.yaml` builds pangolin + gerbil from this monorepo; mounts `components/badger` as Traefik localPlugins; newt via profile `lab` (restart `"no"` until NEWT_ID/SECRET set)
 - `make components-build` → newt + gerbil + olm binaries; `make plus-images` → `pangolin-plus/*:local`
 - Ansible `deploy/` defaults to plus local tags + monorepo badger localPlugins; fosrl fallback via image name overrides
 - Traefik pin: **v3.7** (compose + deploy + installer)
+- **Installer (`install/`) remains stock** fosrl images + catalog badger — use compose.plus / deploy for plus
 
 ---
 

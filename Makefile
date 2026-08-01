@@ -544,9 +544,11 @@ PLUS_BUILD_VERSION = $(if $(VERSION),$(VERSION),$(PLUS_TAG))
 .PHONY: components-test components-build \
 	newt-test newt-build gerbil-build olm-build badger-test \
 	plus-images plus-images-push plus-image-pangolin plus-image-gerbil \
-	plus-image-newt plus-image-olm plus-check-vars plus-check-docker
+	plus-image-newt plus-image-olm plus-check-vars plus-check-docker \
+	plus-guards-selftest plus-verify
 
-# Shared guards for image tags (empty / unsafe chars in tag vars + retag source)
+# Shared guards for image tags (empty / unsafe chars in tag vars + retag source).
+# PLUS_* values are trusted Make variables — do not pass untrusted $(shell) input.
 define plus-assert-tag-vars
 	@if [ -z "$(PLUS_REGISTRY)" ]; then echo "Error: PLUS_REGISTRY is empty"; exit 1; fi
 	@if [ -z "$(PLUS_TAG)" ]; then echo "Error: PLUS_TAG is empty"; exit 1; fi
@@ -643,15 +645,19 @@ plus-images: plus-image-pangolin plus-image-gerbil plus-image-newt plus-image-ol
 		"$(PLUS_REGISTRY)/newt:$(PLUS_TAG)" \
 		"$(PLUS_REGISTRY)/olm:$(PLUS_TAG)" \
 		>/dev/null
+	@# Cheap binary smoke when images support --help / -h (non-fatal if entrypoint differs)
+	@docker run --rm --entrypoint /usr/local/bin/newt "$(PLUS_REGISTRY)/newt:$(PLUS_TAG)" --help >/dev/null 2>&1 \
+		|| docker run --rm --entrypoint /usr/local/bin/newt "$(PLUS_REGISTRY)/newt:$(PLUS_TAG)" -h >/dev/null 2>&1 \
+		|| true
 	@echo ""
 	@echo "plus-images tagged under $(PLUS_REGISTRY)/*:$(PLUS_TAG)"
-	@echo "  (badger is a Traefik plugin — use components/badger as localPlugins source)"
+	@echo "  (badger is a Traefik plugin — compose.plus mounts components/badger as localPlugins)"
 	@echo "Compose: docker compose -f compose.plus.yaml up -d"
-	@echo "Lab newt:  docker compose -f compose.plus.yaml --profile lab up -d"
+	@echo "Lab newt:  NEWT_ID=... NEWT_SECRET=... docker compose -f compose.plus.yaml --profile lab up -d"
 
 # Optional: push to a registry you control. Does NOT default to GHCR.
-# Retags from PLUS_LOCAL_REGISTRY/*:PLUS_LOCAL_TAG (default pangolin-plus/*:local)
-# when PLUS_REGISTRY/PLUS_TAG differ, so split build/push invocations work:
+# Always retags from PLUS_LOCAL_REGISTRY/*:PLUS_LOCAL_TAG when src exists so a
+# second push after rebuild ships the new layers (never keep a stale dest tag):
 #   make plus-images
 #   make plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus PLUS_TAG=local
 plus-images-push: plus-check-vars plus-check-docker
@@ -660,19 +666,19 @@ plus-images-push: plus-check-vars plus-check-docker
 		echo "  make plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus PLUS_TAG=local"; \
 		exit 1; \
 	fi
-	@case "$(PLUS_REGISTRY)" in \
-		fosrl|fosrl/*|docker.io/fosrl|docker.io/fosrl/*|ghcr.io/fosrl|ghcr.io/fosrl/*) \
-			echo "Error: refuse push to upstream fosrl namespace"; exit 1;; \
+	@reg_lc=$$(printf '%s' "$(PLUS_REGISTRY)" | tr '[:upper:]' '[:lower:]'); \
+	case "$$reg_lc" in \
+		fosrl|fosrl/*|docker.io/fosrl|docker.io/fosrl/*|index.docker.io/fosrl|index.docker.io/fosrl/*|registry-1.docker.io/fosrl|registry-1.docker.io/fosrl/*|ghcr.io/fosrl|ghcr.io/fosrl/*) \
+			echo "Error: refuse push to upstream fosrl namespace ($$reg_lc)"; exit 1;; \
 	esac
-	@# Prefer images already tagged for the push dest; else retag from local defaults
 	@for name in pangolin gerbil newt olm; do \
 		src="$(PLUS_LOCAL_REGISTRY)/$$name:$(PLUS_LOCAL_TAG)"; \
 		dst="$(PLUS_REGISTRY)/$$name:$(PLUS_TAG)"; \
-		if docker image inspect "$$dst" >/dev/null 2>&1; then \
-			: ; \
-		elif docker image inspect "$$src" >/dev/null 2>&1; then \
+		if docker image inspect "$$src" >/dev/null 2>&1; then \
 			echo "retag $$src -> $$dst"; \
 			docker tag "$$src" "$$dst"; \
+		elif docker image inspect "$$dst" >/dev/null 2>&1; then \
+			echo "using existing $$dst (no $$src to retag)"; \
 		else \
 			echo "Error: missing image $$dst (and no $$src to retag from). Run: make plus-images"; \
 			exit 1; \
@@ -692,3 +698,33 @@ plus-images-push: plus-check-vars plus-check-docker
 		docker push "$(PLUS_REGISTRY)/olm:$(VERSION)"; \
 	fi
 	@echo "plus-images-push: pushed $(PLUS_REGISTRY)/*:$(PLUS_TAG)"
+
+# Guard smoke: empty/unsafe vars, fosrl refuse aliases, monorepo badger present,
+# compose config (default + lab), ansible syntax-check when ansible-playbook exists.
+plus-guards-selftest: plus-check-vars
+	@set -e; \
+	( $(MAKE) plus-check-vars PLUS_LOCAL_TAG= >/dev/null 2>&1 ) && { echo "FAIL: empty PLUS_LOCAL_TAG should error"; exit 1; } || true; \
+	( $(MAKE) plus-check-vars PLUS_LOCAL_REGISTRY='bad;name' >/dev/null 2>&1 ) && { echo "FAIL: unsafe PLUS_LOCAL_REGISTRY should error"; exit 1; } || true; \
+	for reg in fosrl FOSRL/x docker.io/fosrl ghcr.io/fosrl index.docker.io/fosrl registry-1.docker.io/fosrl; do \
+		( $(MAKE) plus-images-push PLUS_REGISTRY=$$reg PLUS_TAG=local >/dev/null 2>&1 ) \
+			&& { echo "FAIL: should refuse PLUS_REGISTRY=$$reg"; exit 1; } || true; \
+	done; \
+	test -f components/badger/go.mod || { echo "FAIL: missing components/badger/go.mod"; exit 1; }; \
+	command -v docker >/dev/null && docker info >/dev/null 2>&1 && { \
+		docker compose -f compose.plus.yaml config >/dev/null; \
+		docker compose -f compose.plus.yaml --profile lab config >/dev/null; \
+		echo "compose.plus config: OK (default + lab)"; \
+	} || echo "compose.plus config: skip (no docker)"; \
+	if command -v ansible-playbook >/dev/null 2>&1; then \
+		for pb in deploy/pangolin.yml deploy/playbook-simple.yml deploy/playbook-debian-trixie.yml deploy/upgrade-pangolin.yml; do \
+			ansible-playbook --syntax-check "$$pb" >/dev/null; \
+			echo "syntax-check $$pb: OK"; \
+		done; \
+	else \
+		echo "ansible-playbook: skip (not installed)"; \
+	fi; \
+	echo "plus-guards-selftest: PASS"
+
+# Composite verify for plus client stack wiring (no full image build unless already present)
+plus-verify: plus-guards-selftest components-build components-test
+	@echo "plus-verify: PASS"

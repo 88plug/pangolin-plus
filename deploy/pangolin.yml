@@ -89,7 +89,7 @@
 
   handlers:
     - name: restart pangolin
-      shell: cd {{ pangolin_dir }} && docker compose up -d
+      shell: cd "{{ pangolin_dir }}" && docker compose up -d --force-recreate
 
     - name: restart nftables
       systemd: name=nftables state=restarted
@@ -189,25 +189,48 @@
         - "{{ pangolin_dir }}/plugins-local/src/github.com/fosrl"
         - "{{ pangolin_dir }}/letsencrypt"
 
-    # Prefer monorepo plus badger (mined v1.5.0 + real-IP); else fosrl tag v1.5.0.
+    # Prefer monorepo plus badger (mined v1.5.0 + real-IP); else fosrl tag v1.5.0
+    # cloned on the control node (no git required on the VPS).
     - name: Check for monorepo badger source
       local_action: stat path={{ playbook_dir }}/../components/badger/go.mod
       register: monorepo_badger
       become: false
+
+    - name: Warn stock Badger fallback (no plus real-IP)
+      when: not monorepo_badger.stat.exists
+      debug:
+        msg: >-
+          WARNING: monorepo components/badger missing on control node —
+          installing stock fosrl/badger v1.5.0 (no plus real-IP deltas).
+          Run Ansible from a full pangolin-plus checkout for mined badger.
+
+    - name: Clone stock Badger on control node
+      when: not monorepo_badger.stat.exists
+      ansible.builtin.git:
+        repo: https://github.com/fosrl/badger.git
+        version: v1.5.0
+        dest: /tmp/pangolin-plus-badger-v1.5.0
+        depth: 1
+        force: true
+      delegate_to: localhost
+      become: false
+      register: badger_git
 
     - name: Install Badger plugin from monorepo
       when: monorepo_badger.stat.exists
       copy:
         src: "{{ playbook_dir }}/../components/badger/"
         dest: "{{ pangolin_dir }}/plugins-local/src/github.com/fosrl/badger/"
+      register: badger_monorepo
+      notify: restart pangolin
 
-    - name: Pre-download Badger plugin from fosrl v1.5.0
+    - name: Install Badger plugin from control-node stock clone
       when: not monorepo_badger.stat.exists
-      shell: |
-        cd {{ pangolin_dir }}/plugins-local/src/github.com/fosrl
-        git clone --depth 1 --branch v1.5.0 https://github.com/fosrl/badger.git
-      args:
-        creates: "{{ pangolin_dir }}/plugins-local/src/github.com/fosrl/badger/go.mod"
+      copy:
+        src: /tmp/pangolin-plus-badger-v1.5.0/
+        dest: "{{ pangolin_dir }}/plugins-local/src/github.com/fosrl/badger/"
+      register: badger_stock
+      notify: restart pangolin
 
     # Cloudflare cert mode - copy static certificates
     - name: Copy Cloudflare Origin certificate
@@ -301,6 +324,7 @@
     - name: Deploy Pangolin config.yml
       copy:
         dest: "{{ pangolin_dir }}/config/config.yml"
+        mode: '0600'
         content: |
           app:
             dashboard_url: "https://{{ base_domain }}"
@@ -596,10 +620,10 @@
 
     - name: Pull Pangolin images
       when: pull_images | bool
-      shell: cd {{ pangolin_dir }} && docker compose pull
+      shell: cd "{{ pangolin_dir }}" && docker compose pull
 
     - name: Start Pangolin
-      shell: cd {{ pangolin_dir }} && docker compose up -d
+      shell: cd "{{ pangolin_dir }}" && docker compose up -d
 
     - name: Wait for Pangolin to be healthy
       shell: docker inspect --format='{{ '{{' }}.State.Health.Status{{ '}}' }}' pangolin

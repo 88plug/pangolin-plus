@@ -7,11 +7,11 @@ providers:
     pollInterval: 5s
   file:
     filename: /etc/traefik/dynamic_config.yml
+# localPlugins: monorepo components/badger (compose.plus mounts it under /plugins-local)
 experimental:
-  plugins:
+  localPlugins:
     badger:
       moduleName: github.com/fosrl/badger
-      version: v1.4.1
 log:
   level: INFO
   format: common

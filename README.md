@@ -81,7 +81,7 @@ docker compose -f compose.plus.yaml up -d
 | gerbil | WG edge on controller | compose / `make plus-images` |
 | newt | Site connector | site host binary or compose profile `lab` |
 | olm | End-user client | `make -C components/olm local` (not a compose service) |
-| badger | Traefik plugin | monorepo `components/badger` as localPlugins (not a long-running image) |
+| badger | Traefik plugin | **compose.plus** mounts `components/badger` as localPlugins; **Ansible** copies the same tree (or stock clone fallback) |
 
 **When you must use plus-built newt/olm/badger:** any mined client/plugin fix (reconnect, registration, prefer-local-routes, real-IP, etc.). Stock `fosrl/*` or pangolin.net apps will not include those deltas. Binary names stay `newt`/`olm`/`gerbil`; image tags are `pangolin-plus/*`.
 
@@ -97,6 +97,15 @@ ansible-playbook -i inventory.ini pangolin.yml
 Upstream stock images (override **names** + pull):  
 `pangolin_image=fosrl/pangolin:1.21.1` `gerbil_image=fosrl/gerbil:latest` `pull_images=true`.  
 Details: [deploy/README.md](deploy/README.md). Ops: [deploy/TROUBLESHOOTING.md](deploy/TROUBLESHOOTING.md).
+
+### Product boundaries
+
+| Path | Ships |
+|------|--------|
+| `compose.plus.yaml` + `make plus-images` / `components-build` | **Plus** monorepo images, binaries, monorepo badger localPlugins |
+| `deploy/*.yml` | **Plus** defaults (`pangolin-plus/*:local`) or fosrl override |
+| `install/` (upstream-style installer) | **Stock** fosrl images + catalog badger — not plus-mined artifacts |
+
 ---
 
 ## What plus adds (short)
@@ -113,7 +122,9 @@ Details: [deploy/README.md](deploy/README.md). Ops: [deploy/TROUBLESHOOTING.md](
 
 Browser reverse proxy, Newt sites, private resources, IdP/RBAC, resource launcher — see [docs.pangolin.net](https://docs.pangolin.net) and upstream READMEs.
 
-Clients: [Mac](https://pangolin.net/downloads/mac) · [Windows](https://pangolin.net/downloads/windows) · [Linux](https://pangolin.net/downloads/linux) · [iOS](https://pangolin.net/downloads/ios) · [Android](https://pangolin.net/downloads/android) (or build `components/olm`).
+**Plus clients:** build from this monorepo (`make components-build` → `components/newt/bin/newt`, `components/olm/bin/olm`). Stock pangolin.net / `get-newt.sh` downloads do **not** include mined reconnect/registration/real-IP deltas.
+
+Upstream stock clients (no plus deltas): [Mac](https://pangolin.net/downloads/mac) · [Windows](https://pangolin.net/downloads/windows) · [Linux](https://pangolin.net/downloads/linux) · [iOS](https://pangolin.net/downloads/ios) · [Android](https://pangolin.net/downloads/android).
 
 ---
 
