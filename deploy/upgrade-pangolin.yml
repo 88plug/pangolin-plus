@@ -37,6 +37,8 @@
     pull_images: true
     # Re-copy monorepo components/badger when present on the control node
     resync_badger: true
+    # Required to switch off an on-disk pangolin-plus/* deploy onto stock defaults
+    force_demote: false
 
     health_check_retries: 30
     health_check_delay: 10
@@ -60,11 +62,33 @@
       register: current_versions
       changed_when: false
 
+    - name: Read on-disk compose pangolin image
+      shell: |
+        set -e
+        f="{{ pangolin_dir }}/docker-compose.yml"
+        if [ ! -f "$f" ]; then echo "none"; exit 0; fi
+        awk '
+          /^[[:space:]]*pangolin:[[:space:]]*$/ { in_svc=1; next }
+          in_svc && /^[[:space:]]*[a-zA-Z0-9_-]+:[[:space:]]*$/ { in_svc=0 }
+          in_svc && /^[[:space:]]*image:[[:space:]]*/ {
+            sub(/^[[:space:]]*image:[[:space:]]*/, "")
+            gsub(/["\047]/, "")
+            print
+            exit
+          }
+        ' "$f"
+      args:
+        executable: /bin/bash
+      register: on_disk_pangolin
+      changed_when: false
+      failed_when: false
+
     - name: Display pre-upgrade status
       debug:
         msg: |
           Pre-upgrade status:
             Health: {{ pre_health.stdout }}
+            On-disk pangolin image: {{ on_disk_pangolin.stdout | default('none') }}
             Target images: {{ pangolin_image }} / {{ gerbil_image }} / {{ traefik_image }}
             pull_images: {{ pull_images }}
             Current versions:
@@ -84,6 +108,21 @@
           pull_images=true cannot use local-only image names (pangolin-plus/*).
           Load images first (make plus-images) and re-run with pull_images=false,
           or push to a registry and set ghcr.io/... tags with pull_images=true.
+
+    - name: Refuse silent demote from plus-local to stock
+      when:
+        - (on_disk_pangolin.stdout | default('')) is match('^pangolin-plus/')
+        - not (pangolin_image is match('^pangolin-plus/'))
+        - not (force_demote | bool)
+      fail:
+        msg: >-
+          On-disk compose uses plus-local image {{ on_disk_pangolin.stdout }}.
+          Default upgrade target {{ pangolin_image }} would demote off plus.
+          Re-run with:
+            -e pangolin_image=pangolin-plus/pangolin:local
+            -e gerbil_image=pangolin-plus/gerbil:local
+            -e pull_images=false
+          or explicitly -e force_demote=true to switch to stock/registry.
 
     - name: Create backup directory
       file:
@@ -119,32 +158,40 @@
       register: stop_result
       ignore_errors: true
 
+    # Pure bash/awk rewrite — no python3; image refs only via env (no shell inject)
     - name: Rewrite compose service images from vars
       shell: |
-        python3 - <<'PY'
-        from pathlib import Path
-        import re
-        path = Path("{{ pangolin_dir }}/docker-compose.yml")
-        text = path.read_text()
-        images = {
-            "pangolin": "{{ pangolin_image }}",
-            "gerbil": "{{ gerbil_image }}",
-            "traefik": "{{ traefik_image }}",
-        }
-        for svc, img in images.items():
-            # Match service block key then its first image: line
-            pat = re.compile(
-                r"(?m)^([ \t]*" + re.escape(svc) + r":\s*\n(?:[ \t]+[^\n]*\n)*?[ \t]*image:\s*)([^\n]+)"
-            )
-            text2, n = pat.subn(r"\1" + img, text, count=1)
-            if n == 0:
-                raise SystemExit(f"could not find image line for service {svc} in {path}")
-            text = text2
-        path.write_text(text)
-        print("rewrote images:", images)
-        PY
+        set -euo pipefail
+        f="$COMPOSE_FILE"
+        tmp="$(mktemp)"
+        awk -v p="$IMG_PANGOLIN" -v g="$IMG_GERBIL" -v t="$IMG_TRAEFIK" '
+          /^[[:space:]]*pangolin:[[:space:]]*$/ { svc="pangolin"; print; next }
+          /^[[:space:]]*gerbil:[[:space:]]*$/   { svc="gerbil";   print; next }
+          /^[[:space:]]*traefik:[[:space:]]*$/  { svc="traefik";  print; next }
+          svc != "" && /^[[:space:]]*image:[[:space:]]*/ {
+            match($0, /^[[:space:]]*image:[[:space:]]*/)
+            if (svc == "pangolin") { print substr($0, 1, RLENGTH) p; done_p = 1 }
+            else if (svc == "gerbil") { print substr($0, 1, RLENGTH) g; done_g = 1 }
+            else if (svc == "traefik") { print substr($0, 1, RLENGTH) t; done_t = 1 }
+            svc = ""
+            next
+          }
+          { print }
+          END {
+            if (!done_p) { print "could not find image for pangolin" > "/dev/stderr"; exit 1 }
+            if (!done_g) { print "could not find image for gerbil" > "/dev/stderr"; exit 1 }
+            if (!done_t) { print "could not find image for traefik" > "/dev/stderr"; exit 1 }
+          }
+        ' "$f" > "$tmp"
+        mv "$tmp" "$f"
+        echo "rewrote images: pangolin=$IMG_PANGOLIN gerbil=$IMG_GERBIL traefik=$IMG_TRAEFIK"
       args:
         executable: /bin/bash
+      environment:
+        COMPOSE_FILE: "{{ pangolin_dir }}/docker-compose.yml"
+        IMG_PANGOLIN: "{{ pangolin_image }}"
+        IMG_GERBIL: "{{ gerbil_image }}"
+        IMG_TRAEFIK: "{{ traefik_image }}"
       register: rewrite_images
 
     - name: Check for monorepo badger source (control node)
@@ -207,22 +254,24 @@
       shell: cd "{{ pangolin_dir }}" && docker compose up -d --force-recreate
       register: start_result
 
+    # ignore_errors so rollback.sh is still written and operator fail path runs
     - name: Wait for Pangolin to be healthy
       shell: docker inspect --format='{{ '{{' }}.State.Health.Status{{ '}}' }}' pangolin
       register: health
       until: health.stdout == "healthy"
       retries: "{{ health_check_retries }}"
       delay: "{{ health_check_delay }}"
-      # Fail the play if never healthy (do not claim success)
+      ignore_errors: true
 
     - name: Get post-upgrade container status
       shell: docker ps --format 'table {{ '{{' }}.Names{{ '}}' }}\t{{ '{{' }}.Status{{ '}}' }}\t{{ '{{' }}.Image{{ '}}' }}'
       register: post_containers
       changed_when: false
+      ignore_errors: true
 
     - name: Check if upgrade was successful
       set_fact:
-        upgrade_successful: "{{ health.stdout | default('') == 'healthy' }}"
+        upgrade_successful: "{{ (health.stdout | default('')) == 'healthy' }}"
 
     - name: Generate rollback script
       copy:

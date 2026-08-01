@@ -1,3 +1,6 @@
+# Plus stack Traefik static config — monorepo badger via localPlugins.
+# Used by compose.plus.yaml (mounts components/badger under /plugins-local).
+# Stock compose.example.yaml uses traefik_config.yml (catalog plugin) instead.
 api:
   insecure: true
   dashboard: true
@@ -7,13 +10,10 @@ providers:
     pollInterval: 5s
   file:
     filename: /etc/traefik/dynamic_config.yml
-# Stock path (compose.example / installer): catalog plugin download.
-# Plus monorepo localPlugins: see traefik_config.plus.yml + compose.plus.yaml
 experimental:
-  plugins:
+  localPlugins:
     badger:
       moduleName: github.com/fosrl/badger
-      version: v1.5.0
 log:
   level: INFO
   format: common

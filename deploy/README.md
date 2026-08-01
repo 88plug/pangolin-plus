@@ -116,6 +116,9 @@ ansible-playbook -i inventory.ini upgrade-pangolin.yml \
   -e pull_images=false
 ```
 
+If on-disk compose already uses `pangolin-plus/*`, bare defaults refuse silent demote to stock
+unless you pass `-e force_demote=true`.
+
 Full plus re-deploy (compose + badger + config): re-run `pangolin.yml`.  
 `pull_images=true` with `pangolin-plus/*` image names is rejected.
 

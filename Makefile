@@ -545,7 +545,7 @@ PLUS_BUILD_VERSION = $(if $(VERSION),$(VERSION),$(PLUS_TAG))
 	newt-test newt-build gerbil-build olm-build badger-test \
 	plus-images plus-images-push plus-image-pangolin plus-image-gerbil \
 	plus-image-newt plus-image-olm plus-check-vars plus-check-docker \
-	plus-guards-selftest plus-verify
+	plus-check-fosrl-registry plus-guards-selftest plus-verify
 
 # Shared guards for image tags (empty / unsafe chars in tag vars + retag source).
 # PLUS_* values are trusted Make variables — do not pass untrusted $(shell) input.
@@ -565,6 +565,19 @@ plus-check-vars:
 plus-check-docker:
 	@command -v docker >/dev/null || { echo "Error: docker not found"; exit 1; }
 	@docker info >/dev/null 2>&1 || { echo "Error: docker daemon not reachable"; exit 1; }
+
+# Fosrl namespace refuse only (no docker daemon required — used by selftest + push).
+plus-check-fosrl-registry:
+	@if [ -z "$(PLUS_REGISTRY)" ]; then echo "Error: PLUS_REGISTRY is empty"; exit 1; fi
+	@if [ "$(PLUS_REGISTRY)" = "pangolin-plus" ]; then \
+		echo "Error: set PLUS_REGISTRY to a real registry (e.g. ghcr.io/you/pangolin-plus)"; \
+		exit 1; \
+	fi
+	@reg_lc=$$(printf '%s' "$(PLUS_REGISTRY)" | tr '[:upper:]' '[:lower:]'); \
+	case "$$reg_lc" in \
+		fosrl|fosrl/*|docker.io/fosrl|docker.io/fosrl/*|index.docker.io/fosrl|index.docker.io/fosrl/*|registry-1.docker.io/fosrl|registry-1.docker.io/fosrl/*|ghcr.io/fosrl|ghcr.io/fosrl/*) \
+			echo "Error: refuse push to upstream fosrl namespace ($$reg_lc)"; exit 1;; \
+	esac
 
 newt-test:
 	$(MAKE) -C components/newt test
@@ -660,17 +673,7 @@ plus-images: plus-image-pangolin plus-image-gerbil plus-image-newt plus-image-ol
 # second push after rebuild ships the new layers (never keep a stale dest tag):
 #   make plus-images
 #   make plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus PLUS_TAG=local
-plus-images-push: plus-check-vars plus-check-docker
-	@if [ -z "$(PLUS_REGISTRY)" ] || [ "$(PLUS_REGISTRY)" = "pangolin-plus" ]; then \
-		echo "Error: set PLUS_REGISTRY to a real registry (e.g. ghcr.io/you/pangolin-plus)"; \
-		echo "  make plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus PLUS_TAG=local"; \
-		exit 1; \
-	fi
-	@reg_lc=$$(printf '%s' "$(PLUS_REGISTRY)" | tr '[:upper:]' '[:lower:]'); \
-	case "$$reg_lc" in \
-		fosrl|fosrl/*|docker.io/fosrl|docker.io/fosrl/*|index.docker.io/fosrl|index.docker.io/fosrl/*|registry-1.docker.io/fosrl|registry-1.docker.io/fosrl/*|ghcr.io/fosrl|ghcr.io/fosrl/*) \
-			echo "Error: refuse push to upstream fosrl namespace ($$reg_lc)"; exit 1;; \
-	esac
+plus-images-push: plus-check-vars plus-check-fosrl-registry plus-check-docker
 	@for name in pangolin gerbil newt olm; do \
 		src="$(PLUS_LOCAL_REGISTRY)/$$name:$(PLUS_LOCAL_TAG)"; \
 		dst="$(PLUS_REGISTRY)/$$name:$(PLUS_TAG)"; \
@@ -699,22 +702,38 @@ plus-images-push: plus-check-vars plus-check-docker
 	fi
 	@echo "plus-images-push: pushed $(PLUS_REGISTRY)/*:$(PLUS_TAG)"
 
-# Guard smoke: empty/unsafe vars, fosrl refuse aliases, monorepo badger present,
-# compose config (default + lab), ansible syntax-check when ansible-playbook exists.
+# Guard smoke: empty/unsafe vars, fosrl refuse (no docker daemon), monorepo badger,
+# compose config + lab restart:"no", ansible syntax-check when available.
 plus-guards-selftest: plus-check-vars
 	@set -e; \
-	( $(MAKE) plus-check-vars PLUS_LOCAL_TAG= >/dev/null 2>&1 ) && { echo "FAIL: empty PLUS_LOCAL_TAG should error"; exit 1; } || true; \
-	( $(MAKE) plus-check-vars PLUS_LOCAL_REGISTRY='bad;name' >/dev/null 2>&1 ) && { echo "FAIL: unsafe PLUS_LOCAL_REGISTRY should error"; exit 1; } || true; \
+	if $(MAKE) -s plus-check-vars PLUS_LOCAL_TAG= >/dev/null 2>&1; then \
+		echo "FAIL: empty PLUS_LOCAL_TAG should error"; exit 1; \
+	fi; \
+	if $(MAKE) -s plus-check-vars PLUS_LOCAL_REGISTRY='bad;name' >/dev/null 2>&1; then \
+		echo "FAIL: unsafe PLUS_LOCAL_REGISTRY should error"; exit 1; \
+	fi; \
 	for reg in fosrl FOSRL/x docker.io/fosrl ghcr.io/fosrl index.docker.io/fosrl registry-1.docker.io/fosrl; do \
-		( $(MAKE) plus-images-push PLUS_REGISTRY=$$reg PLUS_TAG=local >/dev/null 2>&1 ) \
-			&& { echo "FAIL: should refuse PLUS_REGISTRY=$$reg"; exit 1; } || true; \
+		if $(MAKE) -s plus-check-fosrl-registry PLUS_REGISTRY=$$reg >/dev/null 2>&1; then \
+			echo "FAIL: should refuse PLUS_REGISTRY=$$reg"; exit 1; \
+		fi; \
 	done; \
+	$(MAKE) -s plus-check-fosrl-registry PLUS_REGISTRY=ghcr.io/you/pangolin-plus >/dev/null; \
+	echo "fosrl refuse + allow non-fosrl: OK (no docker required)"; \
 	test -f components/badger/go.mod || { echo "FAIL: missing components/badger/go.mod"; exit 1; }; \
+	test -f config/traefik/traefik_config.plus.yml || { echo "FAIL: missing traefik_config.plus.yml"; exit 1; }; \
+	grep -q 'localPlugins' config/traefik/traefik_config.plus.yml || { echo "FAIL: plus traefik config missing localPlugins"; exit 1; }; \
+	grep -q 'plugins:' config/traefik/traefik_config.yml || { echo "FAIL: stock traefik_config.yml missing catalog plugins"; exit 1; }; \
 	command -v docker >/dev/null && docker info >/dev/null 2>&1 && { \
 		docker compose -f compose.plus.yaml config >/dev/null; \
-		docker compose -f compose.plus.yaml --profile lab config >/dev/null; \
-		echo "compose.plus config: OK (default + lab)"; \
-	} || echo "compose.plus config: skip (no docker)"; \
+		lab_cfg=$$(docker compose -f compose.plus.yaml --profile lab config); \
+		echo "$$lab_cfg" | grep -E "restart:[[:space:]]*['\"]?no['\"]?" >/dev/null \
+			|| { echo "FAIL: lab profile missing restart: no"; exit 1; }; \
+		echo "$$lab_cfg" | grep -q 'newt-lab' || { echo "FAIL: lab missing newt-lab"; exit 1; }; \
+		echo "$$lab_cfg" | grep -q 'traefik_config.plus.yml' \
+			|| { echo "FAIL: compose.plus not using traefik_config.plus.yml"; exit 1; }; \
+		docker compose -f compose.example.yaml config >/dev/null; \
+		echo "compose config: OK (plus default + lab restart:no + example)"; \
+	} || echo "compose config: skip (no docker)"; \
 	if command -v ansible-playbook >/dev/null 2>&1; then \
 		for pb in deploy/pangolin.yml deploy/playbook-simple.yml deploy/playbook-debian-trixie.yml deploy/upgrade-pangolin.yml; do \
 			ansible-playbook --syntax-check "$$pb" >/dev/null; \

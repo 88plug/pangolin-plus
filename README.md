@@ -81,7 +81,7 @@ docker compose -f compose.plus.yaml up -d
 | gerbil | WG edge on controller | compose / `make plus-images` |
 | newt | Site connector | site host binary or compose profile `lab` |
 | olm | End-user client | `make -C components/olm local` (not a compose service) |
-| badger | Traefik plugin | **compose.plus** mounts `components/badger` as localPlugins; **Ansible** copies the same tree (or stock clone fallback) |
+| badger | Traefik plugin | **compose.plus** uses `traefik_config.plus.yml` + mounts `components/badger` as localPlugins; **compose.example** keeps catalog `traefik_config.yml`; **Ansible** copies monorepo (or stock clone) |
 
 **When you must use plus-built newt/olm/badger:** any mined client/plugin fix (reconnect, registration, prefer-local-routes, real-IP, etc.). Stock `fosrl/*` or pangolin.net apps will not include those deltas. Binary names stay `newt`/`olm`/`gerbil`; image tags are `pangolin-plus/*`.
 

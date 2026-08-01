@@ -622,6 +622,10 @@
       when: pull_images | bool
       shell: cd "{{ pangolin_dir }}" && docker compose pull
 
+    # Badger/config notify must remount before health wait (not after success).
+    - name: Apply pending restarts before health wait
+      meta: flush_handlers
+
     - name: Start Pangolin
       shell: cd "{{ pangolin_dir }}" && docker compose up -d
 

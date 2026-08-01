@@ -73,7 +73,8 @@ services:
       pangolin:
         condition: service_healthy
     command:
-      - --configFile=/etc/traefik/traefik_config.yml
+      # Plus-only static config (localPlugins); stock example uses traefik_config.yml
+      - --configFile=/etc/traefik/traefik_config.plus.yml
     environment:
       - XDG_DATA_HOME=/plugins-storage
     volumes:
