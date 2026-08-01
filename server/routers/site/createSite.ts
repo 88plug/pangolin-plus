@@ -22,10 +22,10 @@ import { usageService } from "@server/lib/billing/usageService";
 import { LimitId } from "@server/lib/billing";
 import { generateId } from "@server/auth/sessions/app";
 import {
-    defaultsForTunnelProfile,
     applyRoutingModeToAllowedIps,
-    type TunnelProfile,
-    type RoutingMode
+    resolveTunnelFields,
+    routingModeSchema,
+    tunnelProfileSchema
 } from "@server/lib/tunnels/tunnelProfiles";
 
 
@@ -50,15 +50,8 @@ const createSiteSchema = z.strictObject({
     address: z.string().optional(),
     type: z.enum(["newt", "wireguard", "local"]),
     // pangolin-plus: WireGuard tunnel profile (does not change sites.type)
-    tunnelProfile: z
-        .enum([
-            "standard",
-            "secure-vpn",
-            "split-tunnel",
-            "privacy-gateway"
-        ])
-        .optional(),
-    routingMode: z.enum(["full-tunnel", "selective"]).optional()
+    tunnelProfile: tunnelProfileSchema.optional(),
+    routingMode: routingModeSchema.optional()
 });
 // .refine((data) => {
 //     if (data.type === "local") {
@@ -143,18 +136,11 @@ export async function createSite(
             routingMode: routingModeIn
         } = parsedBody.data;
 
-        // Resolve tunnel profile defaults for wireguard sites
-        let tunnelProfile: TunnelProfile = tunnelProfileIn ?? "standard";
-        let routingMode: RoutingMode = routingModeIn ?? "selective";
-        if (type === "wireguard") {
-            if (tunnelProfileIn && !routingModeIn) {
-                routingMode =
-                    defaultsForTunnelProfile(tunnelProfileIn).routingMode;
-            }
-        } else {
-            tunnelProfile = "standard";
-            routingMode = "selective";
-        }
+        const { tunnelProfile, routingMode } = resolveTunnelFields({
+            siteType: type,
+            tunnelProfile: tunnelProfileIn,
+            routingMode: routingModeIn
+        });
 
         const updatedNewtSecret = secret || generateId(48);
         const updatedNewtId = newtId || generateId(15);

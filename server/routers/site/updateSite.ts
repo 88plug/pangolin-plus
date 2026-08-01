@@ -15,7 +15,10 @@ import { addPeer } from "../gerbil/peers";
 import { getAllowedIps } from "../target/helpers";
 import {
     defaultsForTunnelProfile,
-    applyRoutingModeToAllowedIps
+    applyRoutingModeToAllowedIps,
+    asRoutingMode,
+    routingModeSchema,
+    tunnelProfileSchema
 } from "@server/lib/tunnels/tunnelProfiles";
 
 
@@ -31,15 +34,8 @@ const updateSiteBodySchema = z
         autoUpdateEnabled: z.boolean().optional(),
         autoUpdateOverrideOrg: z.boolean().optional(),
         // pangolin-plus tunnel redesign
-        routingMode: z.enum(["full-tunnel", "selective"]).optional(),
-        tunnelProfile: z
-            .enum([
-                "standard",
-                "secure-vpn",
-                "split-tunnel",
-                "privacy-gateway"
-            ])
-            .optional()
+        routingMode: routingModeSchema.optional(),
+        tunnelProfile: tunnelProfileSchema.optional()
     })
     .refine((data) => Object.keys(data).length > 0, {
         error: "At least one field must be provided for update"
@@ -122,7 +118,7 @@ export async function updateSite(
             );
         }
 
-        // if niceId is provided, check if it's already in use by another site
+        // if niceId is provided, check if it's already in use by another site in this org
         if (updateData.niceId) {
             const [existingSiteNiceIdOverlap] = await db
                 .select()
@@ -130,7 +126,7 @@ export async function updateSite(
                 .where(
                     and(
                         eq(sites.niceId, updateData.niceId),
-                        eq(sites.orgId, sites.orgId),
+                        eq(sites.orgId, existingSite.orgId),
                         ne(sites.siteId, siteId)
                     )
                 )
@@ -184,10 +180,7 @@ export async function updateSite(
                     : base;
                 const allowedIps = applyRoutingModeToAllowedIps(
                     withSubnet,
-                    updatedSite[0].routingMode as
-                        | "full-tunnel"
-                        | "selective"
-                        | null
+                    asRoutingMode(updatedSite[0].routingMode)
                 );
                 await addPeer(existingSite.exitNodeId, {
                     publicKey: existingSite.pubKey,

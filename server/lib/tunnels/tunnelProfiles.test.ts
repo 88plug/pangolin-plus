@@ -1,7 +1,9 @@
 import { assertEquals } from "../../../test/assert";
 import {
     defaultsForTunnelProfile,
-    applyRoutingModeToAllowedIps
+    applyRoutingModeToAllowedIps,
+    resolveTunnelFields,
+    asRoutingMode
 } from "./tunnelProfiles";
 
 assertEquals(
@@ -47,6 +49,20 @@ assertEquals(
     deduped.filter((x) => x === "0.0.0.0/0").length,
     1,
     "dedupe 0.0.0.0/0"
+);
+
+assertEquals(asRoutingMode("full-tunnel"), "full-tunnel", "asRoutingMode full");
+assertEquals(asRoutingMode("bogus"), null, "asRoutingMode rejects junk");
+
+const wg = resolveTunnelFields({
+    siteType: "wireguard",
+    tunnelProfile: "secure-vpn"
+});
+assertEquals(wg.routingMode, "full-tunnel", "resolveTunnelFields profile default");
+assertEquals(
+    resolveTunnelFields({ siteType: "newt" }).routingMode,
+    "selective",
+    "non-wg forced selective"
 );
 
 console.log("tunnelProfiles.test.ts: all assertions passed");

@@ -9,7 +9,10 @@ import logger from "@server/logger";
 import config from "@server/lib/config";
 import { fromError } from "zod-validation-error";
 import { getAllowedIps } from "../target/helpers";
-import { applyRoutingModeToAllowedIps } from "@server/lib/tunnels/tunnelProfiles";
+import {
+    applyRoutingModeToAllowedIps,
+    asRoutingMode
+} from "@server/lib/tunnels/tunnelProfiles";
 
 import { createExitNode } from "#dynamic/routers/gerbil/createExitNode";
 
@@ -105,8 +108,7 @@ export async function generateGerbilConfig(exitNode: ExitNode) {
                 // pangolin-plus: routingMode full-tunnel adds 0.0.0.0/0
                 const allowedIps = applyRoutingModeToAllowedIps(
                     base,
-                    (site as { routingMode?: "full-tunnel" | "selective" })
-                        .routingMode
+                    asRoutingMode(site.routingMode)
                 );
                 return {
                     publicKey: site.pubKey,

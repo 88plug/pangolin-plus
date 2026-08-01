@@ -1,18 +1,19 @@
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
-import { db, domains, orgDomains } from "@server/db";
 import response from "@server/lib/response";
 import HttpCode from "@server/types/HttpCode";
 import createHttpError from "http-errors";
 import logger from "@server/logger";
 import { fromError } from "zod-validation-error";
-import { eq, and } from "drizzle-orm";
 import { OpenAPITags, registry } from "@server/openApi";
-import config from "@server/lib/config";
-import fs from "fs/promises";
-import * as fsSync from "fs";
-import path from "path";
-import * as yaml from "js-yaml";
+import {
+    isPemCertificate,
+    isPemPrivateKey,
+    getCertificatesRoot,
+    resolveOrgDomain,
+    writeLocalCertPem,
+    mergeDynamicCertConfig
+} from "@server/lib/certificates/localCertFs";
 
 const paramsSchema = z
     .object({
@@ -51,20 +52,6 @@ registry.registerPath({
     responses: {}
 });
 
-const VALID_KEY_HEADERS = [
-    "-----BEGIN PRIVATE KEY-----",
-    "-----BEGIN RSA PRIVATE KEY-----",
-    "-----BEGIN EC PRIVATE KEY-----"
-];
-
-/**
- * PEM upload for OSS self-host: filesystem layout matches TraefikConfigManager.scanLocalCertificateState
- *   {certificates_path}/{baseDomain}/cert.pem
- *   {certificates_path}/{baseDomain}/key.pem
- *   {certificates_path}/{baseDomain}/.last_update
- *   {certificates_path}/{baseDomain}/.wildcard   (optional)
- * Also merges an entry into traefik.dynamic_cert_config_path when set.
- */
 export async function uploadCertificate(
     req: Request,
     res: Response,
@@ -94,7 +81,7 @@ export async function uploadCertificate(
         const { orgId, domainId } = parsedParams.data;
         const { certFile, keyFile, wildcard } = parsedBody.data;
 
-        if (!certFile.includes("-----BEGIN CERTIFICATE-----")) {
+        if (!isPemCertificate(certFile)) {
             return next(
                 createHttpError(
                     HttpCode.BAD_REQUEST,
@@ -103,7 +90,7 @@ export async function uploadCertificate(
             );
         }
 
-        if (!VALID_KEY_HEADERS.some((h) => keyFile.includes(h))) {
+        if (!isPemPrivateKey(keyFile)) {
             return next(
                 createHttpError(
                     HttpCode.BAD_REQUEST,
@@ -112,17 +99,8 @@ export async function uploadCertificate(
             );
         }
 
-        const [orgDomain] = await db
-            .select()
-            .from(orgDomains)
-            .where(
-                and(
-                    eq(orgDomains.orgId, orgId),
-                    eq(orgDomains.domainId, domainId)
-                )
-            );
-
-        if (!orgDomain) {
+        const domain = await resolveOrgDomain(orgId, domainId);
+        if (!domain) {
             return next(
                 createHttpError(
                     HttpCode.NOT_FOUND,
@@ -131,20 +109,7 @@ export async function uploadCertificate(
             );
         }
 
-        const [existingDomain] = await db
-            .select()
-            .from(domains)
-            .where(eq(domains.domainId, domainId));
-
-        if (!existingDomain) {
-            return next(
-                createHttpError(HttpCode.NOT_FOUND, "Domain not found")
-            );
-        }
-
-        const certificatesPath =
-            config.getRawConfig().traefik.certificates_path;
-        if (!certificatesPath) {
+        if (!getCertificatesRoot()) {
             return next(
                 createHttpError(
                     HttpCode.INTERNAL_SERVER_ERROR,
@@ -153,84 +118,31 @@ export async function uploadCertificate(
             );
         }
 
-        const domainName = existingDomain.baseDomain;
-        const domainDir = path.join(certificatesPath, domainName);
-        await fs.mkdir(domainDir, { recursive: true });
+        const paths = await writeLocalCertPem({
+            baseDomain: domain.baseDomain,
+            certPem: certFile,
+            keyPem: keyFile,
+            wildcard
+        });
+        logger.info(`Custom certificate written to ${paths.domainDir}`);
 
-        const certPath = path.join(domainDir, "cert.pem");
-        const keyPath = path.join(domainDir, "key.pem");
-        await fs.writeFile(certPath, certFile, { mode: 0o600 });
-        await fs.writeFile(keyPath, keyFile, { mode: 0o600 });
-        await fs.writeFile(
-            path.join(domainDir, ".last_update"),
-            new Date().toISOString(),
-            { mode: 0o644 }
-        );
-
-        const isWildcard =
-            wildcard === true || domainName.startsWith("*.");
-        if (isWildcard) {
-            await fs.writeFile(path.join(domainDir, ".wildcard"), "true", {
-                mode: 0o644
-            });
-        }
-
-        logger.info(`Custom certificate written to ${domainDir}`);
-
-        const dynamicConfigPath =
-            config.getRawConfig().traefik.dynamic_cert_config_path;
-        if (dynamicConfigPath) {
-            try {
-                let dynamicConfig: any = { tls: { certificates: [] } };
-                if (fsSync.existsSync(dynamicConfigPath)) {
-                    const fileContent = fsSync.readFileSync(
-                        dynamicConfigPath,
-                        "utf8"
-                    );
-                    dynamicConfig = yaml.load(fileContent) || dynamicConfig;
-                    if (!dynamicConfig.tls) {
-                        dynamicConfig.tls = { certificates: [] };
-                    }
-                    if (!Array.isArray(dynamicConfig.tls.certificates)) {
-                        dynamicConfig.tls.certificates = [];
-                    }
-                }
-
-                dynamicConfig.tls.certificates =
-                    dynamicConfig.tls.certificates.filter((entry: any) => {
-                        const cf = entry.certFile || "";
-                        return (
-                            !cf.includes(`/${domainName}/`) &&
-                            !cf.endsWith(`/${domainName}.crt`)
-                        );
-                    });
-
-                dynamicConfig.tls.certificates.push({
-                    certFile: certPath,
-                    keyFile: keyPath
-                });
-
-                fsSync.writeFileSync(
-                    dynamicConfigPath,
-                    yaml.dump(dynamicConfig, { noRefs: true }),
-                    "utf8"
-                );
-                logger.info(
-                    `Traefik dynamic cert config updated for ${domainName}`
-                );
-            } catch (configError) {
-                logger.error(
-                    `Failed to update Traefik dynamic config: ${configError}`
-                );
-            }
+        try {
+            mergeDynamicCertConfig(paths);
+            logger.info(
+                `Traefik dynamic cert config updated for ${domain.baseDomain}`
+            );
+        } catch (configError) {
+            logger.error(
+                `Failed to update Traefik dynamic config: ${configError}`
+            );
         }
 
         return response<UploadCertificateResponse>(res, {
             data: {
                 domainId,
-                domain: domainName,
+                domain: domain.baseDomain,
                 status: "valid",
-                path: domainDir
+                path: paths.domainDir
             },
             success: true,
             error: false,
