@@ -29,13 +29,14 @@ OCI_ARGS_EE = --build-arg VERSION=$(tag) \
 #   local images:  make plus-images
 #   published:     make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus
 #   release CI:    .github/workflows/plus-release.yml (tag vX.Y.Z-plus)
-# Gated: set ALLOW_FOSRL_TAGS=1 for ANY target that tags fosrl/pangolin
-# (build-release*, build-sqlite/ee/rc*, create-manifests*, build-arm/x86, dev-build-*).
+# Gated: set ALLOW_FOSRL_TAGS=1 for targets that tag/push fosrl/pangolin
+# (build-release*, build-sqlite/ee/rc*, create-manifests*, build-arm/x86).
+# Local CI/dev loaders (dev-build-*) use pangolin-plus/* and are NOT gated.
 # ---------------------------------------------------------------------------
 check-allow-fosrl-tags:
 	@if [ "$(ALLOW_FOSRL_TAGS)" != "1" ]; then \
 		echo "Error: this target tags fosrl/pangolin:* (upstream-shaped legacy only)."; \
-		echo "  Product images:  make plus-images"; \
+		echo "  Product images:  make plus-images  |  make dev-build-sqlite"; \
 		echo "  Published push:  make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus"; \
 		echo "  Release CI:      .github/workflows/plus-release.yml (git tag vX.Y.Z-plus)"; \
 		echo "  Force legacy:    ALLOW_FOSRL_TAGS=1 make <target> tag=..."; \
@@ -517,7 +518,8 @@ build-x86: check-allow-fosrl-tags
 		--platform linux/amd64 \
 		-t fosrl/pangolin:latest .
 
-dev-build-sqlite: check-allow-fosrl-tags
+# Local product load only (CI: .github/workflows/test.yml). No fosrl tags, no push.
+dev-build-sqlite:
 	@CREATED=$$(date -u +"%Y-%m-%dT%H:%M:%SZ"); \
 	REVISION=$$(git rev-parse HEAD 2>/dev/null || echo "unknown"); \
 	docker build \
@@ -525,11 +527,12 @@ dev-build-sqlite: check-allow-fosrl-tags
 		--build-arg VERSION=dev \
 		--build-arg REVISION=$$REVISION \
 		--build-arg CREATED=$$CREATED \
-		--build-arg IMAGE_TITLE="Pangolin" \
-		--build-arg IMAGE_DESCRIPTION="Identity-aware VPN and proxy for remote access to anything, anywhere" \
-		-t fosrl/pangolin:latest .
+		--build-arg IMAGE_TITLE="Pangolin Plus" \
+		--build-arg IMAGE_DESCRIPTION="pangolin-plus monorepo local sqlite image" \
+		-t pangolin-plus/pangolin:local \
+		-t pangolin-plus/pangolin:dev-sqlite .
 
-dev-build-pg: check-allow-fosrl-tags
+dev-build-pg:
 	@CREATED=$$(date -u +"%Y-%m-%dT%H:%M:%SZ"); \
 	REVISION=$$(git rev-parse HEAD 2>/dev/null || echo "unknown"); \
 	docker build \
@@ -537,15 +540,17 @@ dev-build-pg: check-allow-fosrl-tags
 		--build-arg VERSION=dev \
 		--build-arg REVISION=$$REVISION \
 		--build-arg CREATED=$$CREATED \
-		--build-arg IMAGE_TITLE="Pangolin" \
-		--build-arg IMAGE_DESCRIPTION="Identity-aware VPN and proxy for remote access to anything, anywhere" \
-		-t fosrl/pangolin:postgresql-latest .
+		--build-arg IMAGE_TITLE="Pangolin Plus" \
+		--build-arg IMAGE_DESCRIPTION="pangolin-plus monorepo local postgresql image" \
+		-t pangolin-plus/pangolin:dev-pg \
+		-t pangolin-plus/pangolin:local-pg .
 
+# Local run after dev-build-sqlite (product tags).
 test:
-	docker run -it -p 3000:3000 -p 3001:3001 -p 3002:3002 -v ./config:/app/config fosrl/pangolin:latest
+	docker run -it -p 3000:3000 -p 3001:3001 -p 3002:3002 -v ./config:/app/config pangolin-plus/pangolin:local
 
 clean:
-	docker rmi pangolin
+	-docker rmi pangolin-plus/pangolin:local pangolin-plus/pangolin:dev-sqlite pangolin-plus/pangolin:dev-pg pangolin-plus/pangolin:local-pg 2>/dev/null || true
 
 # --- pangolin-plus monorepo components (PRODUCT PATH) ---
 #
@@ -767,8 +772,25 @@ plus-guards-selftest: plus-check-vars
 	if $(MAKE) -s build-sqlite tag=1.0.0 >/dev/null 2>&1; then \
 		echo "FAIL: bare make build-sqlite should refuse without ALLOW_FOSRL_TAGS=1"; exit 1; \
 	fi; \
-	echo "ALLOW_FOSRL_TAGS refuse (build-release + build-sqlite): OK"; \
+	if $(MAKE) -s -C components/newt docker-build-release tag=1.0.0 >/dev/null 2>&1; then \
+		echo "FAIL: components/newt docker-build-release should refuse without ALLOW_FOSRL_TAGS=1"; exit 1; \
+	fi; \
+	if $(MAKE) -s -C components/olm docker-build-release tag=1.0.0 >/dev/null 2>&1; then \
+		echo "FAIL: components/olm docker-build-release should refuse without ALLOW_FOSRL_TAGS=1"; exit 1; \
+	fi; \
+	if $(MAKE) -s -C components/gerbil docker-build-release tag=1.0.0 >/dev/null 2>&1; then \
+		echo "FAIL: components/gerbil docker-build-release should refuse without ALLOW_FOSRL_TAGS=1"; exit 1; \
+	fi; \
+	echo "ALLOW_FOSRL_TAGS refuse (build-release + build-sqlite + component push): OK"; \
+	# Keep plus_re byte-aligned with deploy/upgrade-pangolin.yml plus_image_re \
 	plus_re='^(docker\.io/|index\.docker\.io/|registry-1\.docker\.io/)?(pangolin-plus/|ghcr\.io/88plug/pangolin-plus/)'; \
+	playbook_re=$$(grep -E "plus_image_re:" deploy/upgrade-pangolin.yml | head -1 | sed -n "s/.*plus_image_re: *['\"]\\(.*\\)['\"].*/\\1/p"); \
+	if [ -n "$$playbook_re" ] && [ "$$playbook_re" != "$$plus_re" ]; then \
+		echo "FAIL: plus_re != upgrade-pangolin.yml plus_image_re"; \
+		echo "  selftest: $$plus_re"; \
+		echo "  playbook: $$playbook_re"; \
+		exit 1; \
+	fi; \
 	for img in \
 		'pangolin-plus/pangolin:local' \
 		'ghcr.io/88plug/pangolin-plus/pangolin:v1.21.1-plus' \

@@ -4,14 +4,24 @@ all: local
 
 VERSION ?= dev
 LDFLAGS = -X main.olmVersion=$(VERSION)
+# Local monorepo image namespace (product path). Published: ghcr.io/88plug/pangolin-plus/olm
+PLUS_IMAGE ?= pangolin-plus/olm
 
 local:
 	CGO_ENABLED=0 go build -o ./bin/olm
 
+# Local load only — never pushes.
 docker-build:
-	docker build -t fosrl/olm:latest .
+	docker build -t $(PLUS_IMAGE):local -t $(PLUS_IMAGE):latest .
 
+# Upstream-shaped multi-arch push to fosrl/olm (gated). Prefer monorepo plus-images-push.
 docker-build-release:
+	@if [ "$(ALLOW_FOSRL_TAGS)" != "1" ]; then \
+		echo "Error: docker-build-release tags/pushes fosrl/olm:* (legacy only)."; \
+		echo "  Product: make -C ../.. plus-images  |  plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus"; \
+		echo "  Force:   ALLOW_FOSRL_TAGS=1 make docker-build-release tag=<tag>"; \
+		exit 1; \
+	fi
 	@if [ -z "$(tag)" ]; then \
 		echo "Error: tag is required. Usage: make docker-build-release tag=<tag>"; \
 		exit 1; \
@@ -23,10 +33,12 @@ docker-build-release:
 		-f Dockerfile \
 		--push
 
+# Multi-arch build (no push; buildx cache only unless single-platform --load).
 docker-build-dev:
 	docker buildx build . \
 		--platform linux/arm/v7,linux/arm64,linux/amd64 \
-		-t fosrl/olm:latest \
+		-t $(PLUS_IMAGE):local \
+		-t $(PLUS_IMAGE):latest \
 		-f Dockerfile
 
 .PHONY: go-build-release \
