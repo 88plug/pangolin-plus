@@ -1,4 +1,5 @@
 .PHONY: build build-pg build-release build-release-arm build-release-amd create-manifests build-arm build-x86 test clean
+.PHONY: check-allow-fosrl-tags
 
 major_tag := $(shell echo $(tag) | cut -d. -f1)
 minor_tag := $(shell echo $(tag) | cut -d. -f1,2)
@@ -22,9 +23,29 @@ OCI_ARGS_EE = --build-arg VERSION=$(tag) \
 	--build-arg IMAGE_TITLE="Pangolin EE" \
 	--build-arg IMAGE_DESCRIPTION="Pangolin Enterprise Edition - Identity-aware VPN and proxy for remote access to anything, anywhere"
 
+# ---------------------------------------------------------------------------
+# LEGACY upstream-shaped targets (tag + push fosrl/pangolin:*)
+# Product path is NOT these targets:
+#   local images:  make plus-images
+#   published:     make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus
+#   release CI:    .github/workflows/plus-release.yml (tag vX.Y.Z-plus)
+# Gated: set ALLOW_FOSRL_TAGS=1 to run build-release* / create-manifests.
+# ---------------------------------------------------------------------------
+check-allow-fosrl-tags:
+	@if [ "$(ALLOW_FOSRL_TAGS)" != "1" ]; then \
+		echo "Error: this target tags fosrl/pangolin:* (upstream-shaped legacy only)."; \
+		echo "  Product images:  make plus-images"; \
+		echo "  Published push:  make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus"; \
+		echo "  Release CI:      .github/workflows/plus-release.yml (git tag vX.Y.Z-plus)"; \
+		echo "  Force legacy:    ALLOW_FOSRL_TAGS=1 make <target> tag=..."; \
+		exit 1; \
+	fi
+
 .PHONY: build-release build-sqlite build-postgresql build-ee-sqlite build-ee-postgresql
 
-build-release: build-sqlite build-postgresql build-ee-sqlite build-ee-postgresql
+# Upstream-shaped multi-variant push (fosrl/pangolin:*). Prefer plus-images / plus-release.
+build-release: check-allow-fosrl-tags
+	$(MAKE) build-sqlite build-postgresql build-ee-sqlite build-ee-postgresql tag=$(tag)
 
 build-sqlite:
 	@if [ -z "$(tag)" ]; then \
@@ -102,7 +123,8 @@ build-saas:
 		--tag $(AWS_IMAGE):$(tag) \
 		--push .
 
-build-release-arm:
+# Upstream-shaped arm64 push (fosrl/pangolin:*-arm64). Prefer plus-images / plus-release.
+build-release-arm: check-allow-fosrl-tags
 	@if [ -z "$(tag)" ]; then \
 		echo "Error: tag is required. Usage: make build-release-arm tag=<tag>"; \
 		exit 1; \
@@ -170,7 +192,8 @@ build-release-arm:
 		--tag fosrl/pangolin:ee-postgresql-$(tag)-arm64 \
 		--push .
 
-build-release-amd:
+# Upstream-shaped amd64 push (fosrl/pangolin:*-amd64). Prefer plus-images / plus-release.
+build-release-amd: check-allow-fosrl-tags
 	@if [ -z "$(tag)" ]; then \
 		echo "Error: tag is required. Usage: make build-release-amd tag=<tag>"; \
 		exit 1; \
@@ -238,7 +261,8 @@ build-release-amd:
 		--tag fosrl/pangolin:ee-postgresql-$(tag)-amd64 \
 		--push .
 
-create-manifests:
+# Upstream-shaped multi-arch manifests (fosrl/pangolin:*). Prefer plus-images / plus-release.
+create-manifests: check-allow-fosrl-tags
 	@if [ -z "$(tag)" ]; then \
 		echo "Error: tag is required. Usage: make create-manifests tag=<tag>"; \
 		exit 1; \
@@ -522,18 +546,26 @@ test:
 clean:
 	docker rmi pangolin
 
-# --- pangolin-plus monorepo components ---
+# --- pangolin-plus monorepo components (PRODUCT PATH) ---
 #
 # Binaries (go build → bin/):  make components-build
 # Local Docker images:         make plus-images
-# Optional registry push:      make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus
+#   → tags $(PLUS_REGISTRY)/{pangolin,gerbil,newt,olm}:$(PLUS_TAG)
+#   → default PLUS_REGISTRY=pangolin-plus (local-only name, not a remote registry)
+# Published push to GHCR:      make plus-images-push \
+#                                PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus \
+#                                PLUS_TAG=v1.21.1-plus VERSION=1.21.1-plus
 # Multi-OS release binaries:   make plus-release-binaries VERSION=1.21.1-plus
 # Product CI:                  .github/workflows/plus-release.yml (tag vX.Y.Z-plus)
+#
+# Do NOT use legacy build-release* (fosrl/pangolin:*) — see check-allow-fosrl-tags above.
 #
 # badger is a Traefik plugin (Go module), not a long-running image:
 #   copy components/badger into Traefik localPlugins, or build with traefik yaegi.
 # olm is an end-user client binary (not a controller compose service).
 
+# Local default (docker tag namespace only). Published path:
+#   PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus
 PLUS_REGISTRY ?= pangolin-plus
 PLUS_TAG ?= local
 # Source tags for retag-on-push (always built by plus-images defaults / compose)
@@ -575,7 +607,7 @@ plus-check-docker:
 plus-check-fosrl-registry:
 	@if [ -z "$(PLUS_REGISTRY)" ]; then echo "Error: PLUS_REGISTRY is empty"; exit 1; fi
 	@if [ "$(PLUS_REGISTRY)" = "pangolin-plus" ]; then \
-		echo "Error: set PLUS_REGISTRY to a real registry (e.g. ghcr.io/you/pangolin-plus)"; \
+		echo "Error: set PLUS_REGISTRY to a real registry (e.g. ghcr.io/88plug/pangolin-plus)"; \
 		exit 1; \
 	fi
 	@reg_lc=$$(printf '%s' "$(PLUS_REGISTRY)" | tr '[:upper:]' '[:lower:]'); \
@@ -723,7 +755,7 @@ plus-guards-selftest: plus-check-vars
 			echo "FAIL: should refuse PLUS_REGISTRY=$$reg"; exit 1; \
 		fi; \
 	done; \
-	$(MAKE) -s plus-check-fosrl-registry PLUS_REGISTRY=ghcr.io/you/pangolin-plus >/dev/null; \
+	$(MAKE) -s plus-check-fosrl-registry PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus >/dev/null; \
 	echo "fosrl refuse + allow non-fosrl: OK (no docker required)"; \
 	test -f components/badger/go.mod || { echo "FAIL: missing components/badger/go.mod"; exit 1; }; \
 	test -f config/traefik/traefik_config.plus.yml || { echo "FAIL: missing traefik_config.plus.yml"; exit 1; }; \

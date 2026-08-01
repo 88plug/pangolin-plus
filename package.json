@@ -3,7 +3,7 @@
     "version": "0.0.0",
     "private": true,
     "type": "module",
-    "description": "Identity-aware VPN and proxy for remote access to anything, anywhere and Dashboard UI (88plug/pangolin-plus community monorepo)",
+    "description": "88plug/pangolin-plus monorepo (private). Product version = git tag vX.Y.Z-plus and APP_VERSION in server/lib/consts.ts (rewritten by plus-release workflow from the tag). This package.json version is a placeholder only — not the product release version.",
     "homepage": "https://github.com/88plug/pangolin-plus",
     "repository": {
         "type": "git",

@@ -3,7 +3,9 @@
 A community **plus fork** of the **Pangolin self-host stack** — not just the dashboard server.
 One monorepo product that **mines** [fosrl/pangolin](https://github.com/fosrl/pangolin), [newt](https://github.com/fosrl/newt), [gerbil](https://github.com/fosrl/gerbil), [olm](https://github.com/fosrl/olm), and [badger](https://github.com/fosrl/badger) (and useful fork PRs), then ships **one** distribution.
 
-> **The bar for every change:** one a thoughtful upstream maintainer would accept — small, focused, tested, verified before it ships. Product home: **[88plug/pangolin-plus](https://github.com/88plug/pangolin-plus)** (`main`). Upstream [fosrl/pangolin](https://github.com/fosrl/pangolin) is remote **`upstream`** for sync/port only. Nothing here is a throwaway hack. We do **not** publish separate `newt-plus` / `olm-plus` products.
+> **The bar for every change:** one a thoughtful upstream maintainer would accept — small, focused, tested, verified before it ships. Product home: **[88plug/pangolin-plus](https://github.com/88plug/pangolin-plus)** (`main`). Upstream [fosrl/pangolin](https://github.com/fosrl/pangolin) is remote **`upstream`** for sync/port only. Nothing here is a throwaway hack. We do **not** publish separate `newt-plus` / `olm-plus` products — clients live under `components/{newt,olm}` in this tree only.
+
+**Product version:** git tag `vX.Y.Z-plus` + `APP_VERSION` in `server/lib/consts.ts` (plus-release rewrites from the tag). Root `package.json` `"version": "0.0.0"` is a private monorepo placeholder, not the release version.
 
 **Layout**
 
@@ -265,7 +267,7 @@ FORK GRAVEYARD:
 ```
 ECOSYSTEM:
   Companions mined into monorepo: fosrl/newt, gerbil, olm, badger
-  Separate plus products: none (newt-plus left as MOVED.md pointer only)
+  Separate plus products: none (single monorepo only; no newt-plus / olm-plus products)
   Survivors ported this pass: gerbil#106/#105, olm#123, badger#5/#9+forks
 ```
 
@@ -313,7 +315,8 @@ make components-test
 # Local Docker images: pangolin-plus/{pangolin,gerbil,newt,olm}:local
 make plus-images
 # Optional push (refuses fosrl / ghcr.io/fosrl namespaces):
-# make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus PLUS_TAG=local
+# Published path (GHCR):
+# make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus PLUS_TAG=v1.21.1-plus VERSION=1.21.1-plus
 
 # Compose edge stack (traefik:v3.7)
 docker compose -f compose.plus.yaml up -d --build

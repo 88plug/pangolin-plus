@@ -117,15 +117,17 @@ When `pull_images: false` (default), playbooks `docker image inspect` `pangolin_
 
 ### Safe upgrade (`upgrade-pangolin.yml`)
 
-Defaults rewrite compose images to **stock/registry** tags and pull:
+Defaults rewrite compose images to **published pangolin-plus** (GHCR) and pull:
 
 | Var | Default |
 |-----|---------|
-| `pangolin_image` | `fosrl/pangolin:latest` |
-| `gerbil_image` | `fosrl/gerbil:latest` |
+| `pangolin_image` | `ghcr.io/88plug/pangolin-plus/pangolin:v1.21.1-plus` |
+| `gerbil_image` | `ghcr.io/88plug/pangolin-plus/gerbil:v1.21.1-plus` |
 | `traefik_image` | `traefik:v3.7` |
 | `pull_images` | `true` |
 | `resync_badger` | `true` (re-copy monorepo badger when present on control node) |
+
+Bump the tag after each `vX.Y.Z-plus` release, or pass `-e pangolin_image=...`.
 
 Plus local upgrade example:
 
@@ -136,11 +138,21 @@ ansible-playbook -i inventory.ini upgrade-pangolin.yml \
   -e pull_images=false
 ```
 
-If on-disk compose already uses `pangolin-plus/*`, bare defaults refuse silent demote to stock
-unless you pass `-e force_demote=true`.
+Upstream stock fallback (leaves plus):
+
+```bash
+ansible-playbook -i inventory.ini upgrade-pangolin.yml \
+  -e pangolin_image=fosrl/pangolin:1.21.1 \
+  -e gerbil_image=fosrl/gerbil:latest \
+  -e pull_images=true \
+  -e force_demote=true
+```
+
+If on-disk compose already uses plus (`pangolin-plus/*` or `ghcr.io/88plug/pangolin-plus/*`),
+targets that are **not** plus refuse silent demote unless `-e force_demote=true`.
 
 Full plus re-deploy (compose + badger + config): re-run `pangolin.yml`.  
-`pull_images=true` with `pangolin-plus/*` image names is rejected.
+`pull_images=true` with local-only `pangolin-plus/*` image names is rejected.
 
 ## PEM upload in the dashboard
 
