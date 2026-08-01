@@ -550,7 +550,7 @@ PLUS_DIST ?= dist/plus
 	plus-images plus-images-push plus-image-pangolin plus-image-gerbil \
 	plus-image-newt plus-image-olm plus-check-vars plus-check-docker \
 	plus-check-fosrl-registry plus-guards-selftest plus-verify \
-	plus-release-binaries
+	plus-release-binaries plus-install-scripts-selftest plus-release-linux-amd64-smoke
 
 # Shared guards for image tags (empty / unsafe chars in tag vars + retag source).
 # PLUS_* values are trusted Make variables — do not pass untrusted $(shell) input.
@@ -748,12 +748,13 @@ plus-guards-selftest: plus-check-vars
 	else \
 		echo "ansible-playbook: skip (not installed)"; \
 	fi; \
-	for s in scripts/get-plus-newt.sh scripts/get-plus-olm.sh scripts/get-plus-gerbil.sh; do \
-		test -f "$$s" || { echo "FAIL: missing $$s"; exit 1; }; \
-		sh -n "$$s" || { echo "FAIL: sh -n $$s"; exit 1; }; \
-		echo "sh -n $$s: OK"; \
-	done; \
+	$(MAKE) -s plus-install-scripts-selftest; \
 	echo "plus-guards-selftest: PASS"
+
+# Behavioral smoke for get-plus install scripts (no network for core paths).
+plus-install-scripts-selftest:
+	@chmod +x scripts/plus-install-scripts-selftest.sh scripts/get-plus-*.sh
+	@sh scripts/plus-install-scripts-selftest.sh
 
 # Composite verify for plus client stack wiring (no full image build unless already present)
 plus-verify: plus-guards-selftest components-build components-test
@@ -767,8 +768,56 @@ plus-verify: plus-guards-selftest components-build components-test
 #   make plus-release-binaries VERSION=1.21.1-plus
 #   ls dist/plus/
 #
-# Expected assets (current matrix): newt×10 + olm×8 + gerbil×2 = 20 (+ SHA256SUMS).
-PLUS_RELEASE_MIN_ASSETS ?= 18
+# Exact expected basenames (newt×10 + olm×8 + gerbil×2 = 20; + SHA256SUMS).
+# Keep in sync with components/*/Makefile go-build-release targets.
+PLUS_RELEASE_EXPECTED_ASSETS := \
+	gerbil_linux_amd64 \
+	gerbil_linux_arm64 \
+	newt_darwin_amd64 \
+	newt_darwin_arm64 \
+	newt_freebsd_amd64 \
+	newt_freebsd_arm64 \
+	newt_linux_amd64 \
+	newt_linux_arm32 \
+	newt_linux_arm32v6 \
+	newt_linux_arm64 \
+	newt_linux_riscv64 \
+	newt_windows_amd64.exe \
+	olm_darwin_amd64 \
+	olm_darwin_arm64 \
+	olm_linux_amd64 \
+	olm_linux_arm32 \
+	olm_linux_arm32v6 \
+	olm_linux_arm64 \
+	olm_linux_riscv64 \
+	olm_windows_amd64.exe
+
+# Lightweight CI smoke: linux/amd64 clients only (no full multi-OS matrix).
+plus-release-linux-amd64-smoke:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "Error: VERSION required. Usage: make plus-release-linux-amd64-smoke VERSION=1.21.1-plus"; \
+		exit 1; \
+	fi
+	@printf '%s' "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-plus(\.[a-zA-Z0-9.]+)?$$' \
+		|| { echo "Error: VERSION must match N.N.N-plus, got: $(VERSION)"; exit 1; }
+	@command -v go >/dev/null || { echo "Error: go not found"; exit 1; }
+	@mkdir -p components/newt/bin components/olm/bin components/gerbil/bin "$(PLUS_DIST)"
+	$(MAKE) -C components/newt go-build-release-linux-amd64 VERSION="$(VERSION)"
+	$(MAKE) -C components/olm go-build-release-linux-amd64 VERSION="$(VERSION)"
+	@cd components/gerbil && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o bin/gerbil_linux_amd64 .
+	@cp -f components/newt/bin/newt_linux_amd64 components/olm/bin/olm_linux_amd64 \
+		components/gerbil/bin/gerbil_linux_amd64 "$(PLUS_DIST)/"
+	@set -e; \
+	newt_ver=$$("$(PLUS_DIST)/newt_linux_amd64" --version 2>/dev/null || true); \
+	olm_ver=$$("$(PLUS_DIST)/olm_linux_amd64" --version 2>/dev/null || true); \
+	echo "smoke newt --version: $$newt_ver"; \
+	echo "smoke olm --version: $$olm_ver"; \
+	printf '%s' "$$newt_ver" | grep -Fq "$(VERSION)" \
+		|| { echo "Error: newt --version missing VERSION=$(VERSION): $$newt_ver"; exit 1; }; \
+	printf '%s' "$$olm_ver" | grep -Fq "$(VERSION)" \
+		|| { echo "Error: olm --version missing VERSION=$(VERSION): $$olm_ver"; exit 1; }; \
+	test -x "$(PLUS_DIST)/gerbil_linux_amd64"; \
+	echo "plus-release-linux-amd64-smoke: PASS"
 
 plus-release-binaries:
 	@if [ -z "$(VERSION)" ]; then \
@@ -806,12 +855,35 @@ plus-release-binaries:
 		[ -f "$$f" ] || continue; \
 		cp -f "$$f" "$(PLUS_DIST)/$$(basename "$$f")"; \
 	done; \
+	missing=0; \
+	for name in $(PLUS_RELEASE_EXPECTED_ASSETS); do \
+		if [ ! -f "$(PLUS_DIST)/$$name" ]; then \
+			echo "Error: missing expected asset $$name"; \
+			missing=1; \
+		fi; \
+	done; \
+	if [ "$$missing" -ne 0 ]; then \
+		echo "Staged files:"; ls -la "$(PLUS_DIST)" || true; \
+		exit 1; \
+	fi; \
 	count=$$(find "$(PLUS_DIST)" -type f ! -name SHA256SUMS | wc -l); \
-	if [ "$$count" -lt "$(PLUS_RELEASE_MIN_ASSETS)" ]; then \
-		echo "Error: expected >= $(PLUS_RELEASE_MIN_ASSETS) staged binaries under $(PLUS_DIST), found $$count"; \
+	expected=$$(printf '%s\n' $(PLUS_RELEASE_EXPECTED_ASSETS) | wc -w); \
+	if [ "$$count" -ne "$$expected" ]; then \
+		echo "Error: expected exactly $$expected assets, found $$count (extra basenames?)"; \
 		ls -la "$(PLUS_DIST)" || true; \
 		exit 1; \
 	fi; \
+	for f in "$(PLUS_DIST)"/*; do \
+		base=$$(basename "$$f"); \
+		[ "$$base" = "SHA256SUMS" ] && continue; \
+		ok=0; \
+		for name in $(PLUS_RELEASE_EXPECTED_ASSETS); do \
+			[ "$$base" = "$$name" ] && ok=1 && break; \
+		done; \
+		if [ "$$ok" -ne 1 ]; then \
+			echo "Error: unexpected asset $$base"; exit 1; \
+		fi; \
+	done; \
 	test -x "$(PLUS_DIST)/newt_linux_amd64" || { echo "Error: missing newt_linux_amd64"; exit 1; }; \
 	test -x "$(PLUS_DIST)/olm_linux_amd64" || { echo "Error: missing olm_linux_amd64"; exit 1; }; \
 	test -x "$(PLUS_DIST)/gerbil_linux_amd64" || { echo "Error: missing gerbil_linux_amd64"; exit 1; }; \
@@ -819,12 +891,13 @@ plus-release-binaries:
 	olm_ver=$$("$(PLUS_DIST)/olm_linux_amd64" --version 2>/dev/null || true); \
 	echo "smoke newt --version: $$newt_ver"; \
 	echo "smoke olm --version: $$olm_ver"; \
-	printf '%s' "$$newt_ver" | grep -q "$(VERSION)" \
+	printf '%s' "$$newt_ver" | grep -Fq "$(VERSION)" \
 		|| { echo "Error: newt --version missing VERSION=$(VERSION): $$newt_ver"; exit 1; }; \
-	printf '%s' "$$olm_ver" | grep -q "$(VERSION)" \
+	printf '%s' "$$olm_ver" | grep -Fq "$(VERSION)" \
 		|| { echo "Error: olm --version missing VERSION=$(VERSION): $$olm_ver"; exit 1; }; \
-	( cd "$(PLUS_DIST)" && sha256sum * > SHA256SUMS ); \
-	grep -q 'newt_linux_amd64' "$(PLUS_DIST)/SHA256SUMS"; \
+	( cd "$(PLUS_DIST)" && sha256sum $(PLUS_RELEASE_EXPECTED_ASSETS) > SHA256SUMS ); \
+	( cd "$(PLUS_DIST)" && sha256sum -c SHA256SUMS >/dev/null ); \
+	echo "SHA256SUMS: verified (sha256sum -c)"; \
 	echo ""; \
 	echo "plus-release-binaries: $$count assets + SHA256SUMS → $(PLUS_DIST)/"; \
 	ls -la "$(PLUS_DIST)"

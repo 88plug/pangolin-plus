@@ -78,3 +78,29 @@ jobs:
 
       - name: Build Docker image pg
         run: make dev-build-pg
+
+  # Plus monorepo guards + light client binary smoke (no full multi-OS matrix).
+  plus-guards:
+    name: Plus guards & install scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26"
+          cache-dependency-path: |
+            components/newt/go.sum
+            components/olm/go.sum
+            components/gerbil/go.sum
+
+      - name: plus-guards-selftest
+        run: make plus-guards-selftest
+
+      - name: plus-install-scripts-selftest
+        run: make plus-install-scripts-selftest
+
+      - name: linux/amd64 binary smoke
+        run: make plus-release-linux-amd64-smoke VERSION=0.0.0-plus.ci
