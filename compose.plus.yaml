@@ -1,21 +1,30 @@
-# pangolin-plus full stack — builds server + edge components from this monorepo.
+# pangolin-plus full stack — monorepo build *or* published GHCR images.
 #
-# Default (controller edge):
+# Local build (default image tags pangolin-plus/*:local):
 #   docker compose -f compose.plus.yaml build
 #   docker compose -f compose.plus.yaml up -d
+#
+# Published images (pull only — do not rebuild from source):
+#   export TAG=v1.21.1-plus
+#   export PANGOLIN_IMAGE=ghcr.io/88plug/pangolin-plus/pangolin:${TAG}
+#   export GERBIL_IMAGE=ghcr.io/88plug/pangolin-plus/gerbil:${TAG}
+#   export NEWT_IMAGE=ghcr.io/88plug/pangolin-plus/newt:${TAG}
+#   docker compose -f compose.plus.yaml pull
+#   docker compose -f compose.plus.yaml up -d --no-build
 #
 # Lab site connector (plus newt against this controller):
 #   export NEWT_ID=... NEWT_SECRET=...
 #   docker compose -f compose.plus.yaml --profile lab up -d
 #
-# Image tags match `make plus-images` → pangolin-plus/{pangolin,gerbil,newt,olm}:local
+# pull_policy: missing = use local tag if present; set COMPOSE_PULL_POLICY=always
+# to force registry pull when IMAGE env points at GHCR.
 #
 # Roles:
 #   pangolin + gerbil + traefik  — control-plane edge (compose services)
 #   newt                         — site connector (profile `lab` here, or install binary
-#                                  on each site host: make -C components/newt local)
+#                                  on each site host: scripts/get-plus-newt.sh)
 #   olm                          — end-user client binary only (not a compose service):
-#                                  make -C components/olm local  → components/olm/bin/olm
+#                                  scripts/get-plus-olm.sh
 #   badger                       — Traefik localPlugins from components/badger (not an image)
 
 name: pangolin-plus
@@ -29,6 +38,7 @@ services:
         BUILD: oss
         DATABASE: sqlite
     image: ${PANGOLIN_IMAGE:-pangolin-plus/pangolin:local}
+    pull_policy: ${COMPOSE_PULL_POLICY:-missing}
     container_name: pangolin
     restart: unless-stopped
     volumes:
@@ -44,6 +54,7 @@ services:
       context: ./components/gerbil
       dockerfile: Dockerfile
     image: ${GERBIL_IMAGE:-pangolin-plus/gerbil:local}
+    pull_policy: ${COMPOSE_PULL_POLICY:-missing}
     container_name: gerbil
     restart: unless-stopped
     depends_on:
@@ -98,6 +109,7 @@ services:
       context: ./components/newt
       dockerfile: Dockerfile
     image: ${NEWT_IMAGE:-pangolin-plus/newt:local}
+    pull_policy: ${COMPOSE_PULL_POLICY:-missing}
     container_name: newt-lab
     restart: "no"
     depends_on:

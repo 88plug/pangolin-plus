@@ -1,15 +1,16 @@
 #!/bin/sh
-# Install plus olm (end-user client) from 88plug/pangolin-plus GitHub Releases.
+# Optional: install plus gerbil host binary from 88plug/pangolin-plus GitHub Releases.
+#
+# Gerbil is **container-first** on the controller edge (compose / GHCR image).
+# Prefer:
+#   docker pull ghcr.io/88plug/pangolin-plus/gerbil:TAG
+#   # or compose.plus.yaml GERBIL_IMAGE=…
+#
+# Host binary is linux-only (amd64/arm64) for rare bare-metal edge cases.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-olm.sh | sh
-#   VERSION=v1.21.1-plus sh get-plus-olm.sh
-#   VERSION=1.21.1-plus ./scripts/get-plus-olm.sh
-#
-# Stock fosrl (no plus deltas):
-#   curl -fsSL https://raw.githubusercontent.com/fosrl/olm/main/get-olm.sh | bash
-#
-# Platforms: linux / darwin / windows (amd64, arm64, …). No FreeBSD assets.
+#   VERSION=v1.21.1-plus sh get-plus-gerbil.sh
+#   curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-gerbil.sh | sh
 
 set -e
 
@@ -20,7 +21,7 @@ NC='\033[0m'
 
 REPO="${REPO:-88plug/pangolin-plus}"
 GITHUB_API_URL="https://api.github.com/repos/${REPO}/releases/latest"
-COMPONENT=olm
+COMPONENT=gerbil
 
 print_status()  { printf '%b[INFO]%b %s\n'  "${GREEN}"  "${NC}" "$1"; }
 print_warning() { printf '%b[WARN]%b %s\n'  "${YELLOW}" "${NC}" "$1" >&2; }
@@ -68,10 +69,7 @@ resolve_tag() {
         return
     fi
     pin="$VERSION"
-    c1="$pin"
-    c2="v${pin#v}"
-    c3="${pin#v}"
-    for candidate in "$c1" "$c2" "$c3"; do
+    for candidate in "$pin" "v${pin#v}" "${pin#v}"; do
         [ -n "$candidate" ] || continue
         sums_url="https://github.com/${REPO}/releases/download/${candidate}/SHA256SUMS"
         if http_head_ok "$sums_url"; then
@@ -84,54 +82,32 @@ resolve_tag() {
             return
         fi
     done
-    print_error "No release found for VERSION=${pin} on ${REPO} (tried v/no-v)."
-    print_error "Check https://github.com/${REPO}/releases"
+    print_error "No release found for VERSION=${pin} on ${REPO}"
     exit 1
 }
 
 detect_platform() {
-    os=""
-    arch=""
     case "$(uname -s)" in
-        Linux*)  os="linux" ;;
-        Darwin*) os="darwin" ;;
-        MINGW*|MSYS*|CYGWIN*) os="windows" ;;
-        FreeBSD*)
-            print_error "plus olm has no FreeBSD release assets (linux/darwin/windows only)."
-            print_error "Build from source: make -C components/olm local"
-            exit 1
-            ;;
+        Linux*) ;;
         *)
-            print_error "Unsupported operating system: $(uname -s)"
+            print_error "plus gerbil host binary is linux-only (use the container image on other OS)."
+            print_error "  docker pull ghcr.io/88plug/pangolin-plus/gerbil:TAG"
             exit 1
             ;;
     esac
     case "$(uname -m)" in
         x86_64|amd64) arch="amd64" ;;
         arm64|aarch64) arch="arm64" ;;
-        armv7l) arch="arm32" ;;
-        armv6l) arch="arm32v6" ;;
-        riscv64)
-            if [ "$os" != "linux" ]; then
-                print_error "RISC-V only supported on Linux"
-                exit 1
-            fi
-            arch="riscv64"
-            ;;
         *)
-            print_error "Unsupported architecture: $(uname -m)"
+            print_error "Unsupported architecture for gerbil binary: $(uname -m) (amd64/arm64 only)"
             exit 1
             ;;
     esac
-    printf '%s_%s' "$os" "$arch"
+    printf 'linux_%s' "$arch"
 }
 
-# Aligned with get-plus-newt: /usr/local/bin (unix), ~/bin (windows)
 get_install_dir() {
-    case "$PLATFORM" in
-        *windows*) printf '%s' "${HOME}/bin" ;;
-        *) printf '%s' "/usr/local/bin" ;;
-    esac
+    printf '%s' "/usr/local/bin"
 }
 
 needs_sudo() {
@@ -185,86 +161,42 @@ verify_sha256() {
             fi
             printf '%s: OK\n' "$binary_name"
         else
-            print_error "Neither sha256sum nor shasum available for verification"
+            print_error "Neither sha256sum nor shasum available"
             exit 1
         fi
     )
 }
 
-install_olm() {
-    platform="$1"
-    install_dir="$2"
-    sudo_cmd="$3"
-    binary_name="olm_${platform}"
-    final_name="olm"
-    case "$platform" in
-        *windows*)
-            binary_name="${binary_name}.exe"
-            final_name="olm.exe"
-            ;;
-    esac
-    download_url="${BASE_URL}/${binary_name}"
-    workdir=$(mktemp -d)
-    trap 'rm -rf "$workdir"' EXIT INT TERM
-    temp_file="${workdir}/${binary_name}"
-    final_path="${install_dir}/${final_name}"
-    print_status "Downloading plus olm from ${download_url}"
-    if ! http_get "$download_url" "$temp_file"; then
-        print_error "Download failed: ${download_url}"
-        exit 1
-    fi
-    verify_sha256 "$binary_name" "$workdir"
-    chmod +x "$temp_file"
-    if [ -n "$sudo_cmd" ]; then
-        $sudo_cmd mkdir -p "$install_dir"
-        print_status "Using sudo to install to ${install_dir}"
-        $sudo_cmd mv "$temp_file" "$final_path"
-    else
-        mkdir -p "$install_dir"
-        mv "$temp_file" "$final_path"
-    fi
-    trap - EXIT INT TERM
-    rm -rf "$workdir"
-    print_status "olm installed to ${final_path}"
-    case ":${PATH}:" in
-        *":${install_dir}:"*) ;;
-        *)
-            print_warning "Install directory ${install_dir} is not in your PATH."
-            print_warning "  export PATH=\"${install_dir}:\$PATH\""
-            ;;
-    esac
-}
-
-verify_installation() {
-    install_dir="$1"
-    exe_suffix=""
-    case "$PLATFORM" in *windows*) exe_suffix=".exe" ;; esac
-    olm_path="${install_dir}/olm${exe_suffix}"
-    if [ -f "$olm_path" ] && [ -x "$olm_path" ]; then
-        print_status "Installation successful!"
-        print_status "olm version: $("$olm_path" --version 2>/dev/null || printf 'unknown')"
-        return 0
-    fi
-    print_error "Installation failed. Binary not found or not executable."
-    return 1
-}
-
 main() {
-    print_status "Installing plus olm from ${REPO}..."
+    print_warning "gerbil is container-first — prefer ghcr.io/88plug/pangolin-plus/gerbil"
+    print_status "Installing optional plus gerbil host binary from ${REPO}..."
     PLATFORM=$(detect_platform) || exit 1
     print_status "Detected platform: ${PLATFORM}"
     TAG=$(resolve_tag) || exit 1
     print_status "Release tag: ${TAG}"
     BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+    binary_name="gerbil_${PLATFORM}"
     INSTALL_DIR=$(get_install_dir)
-    print_status "Install directory: ${INSTALL_DIR}"
     SUDO_CMD=$(get_sudo_cmd "$INSTALL_DIR") || exit 1
-    install_olm "$PLATFORM" "$INSTALL_DIR" "$SUDO_CMD"
-    if ! verify_installation "$INSTALL_DIR"; then
-        exit 1
+    workdir=$(mktemp -d)
+    trap 'rm -rf "$workdir"' EXIT INT TERM
+    temp_file="${workdir}/${binary_name}"
+    print_status "Downloading from ${BASE_URL}/${binary_name}"
+    http_get "${BASE_URL}/${binary_name}" "$temp_file"
+    verify_sha256 "$binary_name" "$workdir"
+    chmod +x "$temp_file"
+    final_path="${INSTALL_DIR}/gerbil"
+    if [ -n "$SUDO_CMD" ]; then
+        $SUDO_CMD mkdir -p "$INSTALL_DIR"
+        $SUDO_CMD mv "$temp_file" "$final_path"
+    else
+        mkdir -p "$INSTALL_DIR"
+        mv "$temp_file" "$final_path"
     fi
-    print_status "plus olm is ready (stock fosrl / pangolin.net apps miss monorepo deltas)."
-    print_status "Run 'olm --help' to get started."
+    trap - EXIT INT TERM
+    rm -rf "$workdir"
+    print_status "gerbil installed to ${final_path}"
+    print_status "For controller edge, prefer the container image over this host binary."
 }
 
 main "$@"

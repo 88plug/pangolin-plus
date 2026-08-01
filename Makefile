@@ -748,6 +748,11 @@ plus-guards-selftest: plus-check-vars
 	else \
 		echo "ansible-playbook: skip (not installed)"; \
 	fi; \
+	for s in scripts/get-plus-newt.sh scripts/get-plus-olm.sh scripts/get-plus-gerbil.sh; do \
+		test -f "$$s" || { echo "FAIL: missing $$s"; exit 1; }; \
+		sh -n "$$s" || { echo "FAIL: sh -n $$s"; exit 1; }; \
+		echo "sh -n $$s: OK"; \
+	done; \
 	echo "plus-guards-selftest: PASS"
 
 # Composite verify for plus client stack wiring (no full image build unless already present)
@@ -761,6 +766,10 @@ plus-verify: plus-guards-selftest components-build components-test
 #
 #   make plus-release-binaries VERSION=1.21.1-plus
 #   ls dist/plus/
+#
+# Expected assets (current matrix): newt×10 + olm×8 + gerbil×2 = 20 (+ SHA256SUMS).
+PLUS_RELEASE_MIN_ASSETS ?= 18
+
 plus-release-binaries:
 	@if [ -z "$(VERSION)" ]; then \
 		echo "Error: VERSION is required. Usage: make plus-release-binaries VERSION=1.21.1-plus"; \
@@ -769,9 +778,14 @@ plus-release-binaries:
 	@case "$(VERSION)" in \
 		*[\'\"\\\;\|\$$\`\ \	]*) echo "Error: VERSION contains unsafe chars"; exit 1;; \
 	esac
+	@# Allowlist aligns with plus-release.yml (no leading v in VERSION for ldflags)
+	@printf '%s' "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-plus(\.[a-zA-Z0-9.]+)?$$' \
+		|| { echo "Error: VERSION must match N.N.N-plus (optional .suffix), got: $(VERSION)"; exit 1; }
 	@command -v go >/dev/null || { echo "Error: go not found"; exit 1; }
 	@rm -rf "$(PLUS_DIST)"
 	@mkdir -p "$(PLUS_DIST)"
+	@# Clean CI checkouts often lack gitignored bin/ dirs
+	@mkdir -p components/newt/bin components/olm/bin components/gerbil/bin
 	@echo "Building newt release binaries (VERSION=$(VERSION))..."
 	$(MAKE) -C components/newt go-build-release VERSION="$(VERSION)"
 	@echo "Building olm release binaries (VERSION=$(VERSION))..."
@@ -793,12 +807,24 @@ plus-release-binaries:
 		cp -f "$$f" "$(PLUS_DIST)/$$(basename "$$f")"; \
 	done; \
 	count=$$(find "$(PLUS_DIST)" -type f ! -name SHA256SUMS | wc -l); \
-	if [ "$$count" -lt 3 ]; then \
-		echo "Error: expected staged binaries under $(PLUS_DIST), found $$count"; \
+	if [ "$$count" -lt "$(PLUS_RELEASE_MIN_ASSETS)" ]; then \
+		echo "Error: expected >= $(PLUS_RELEASE_MIN_ASSETS) staged binaries under $(PLUS_DIST), found $$count"; \
 		ls -la "$(PLUS_DIST)" || true; \
 		exit 1; \
 	fi; \
+	test -x "$(PLUS_DIST)/newt_linux_amd64" || { echo "Error: missing newt_linux_amd64"; exit 1; }; \
+	test -x "$(PLUS_DIST)/olm_linux_amd64" || { echo "Error: missing olm_linux_amd64"; exit 1; }; \
+	test -x "$(PLUS_DIST)/gerbil_linux_amd64" || { echo "Error: missing gerbil_linux_amd64"; exit 1; }; \
+	newt_ver=$$("$(PLUS_DIST)/newt_linux_amd64" --version 2>/dev/null || true); \
+	olm_ver=$$("$(PLUS_DIST)/olm_linux_amd64" --version 2>/dev/null || true); \
+	echo "smoke newt --version: $$newt_ver"; \
+	echo "smoke olm --version: $$olm_ver"; \
+	printf '%s' "$$newt_ver" | grep -q "$(VERSION)" \
+		|| { echo "Error: newt --version missing VERSION=$(VERSION): $$newt_ver"; exit 1; }; \
+	printf '%s' "$$olm_ver" | grep -q "$(VERSION)" \
+		|| { echo "Error: olm --version missing VERSION=$(VERSION): $$olm_ver"; exit 1; }; \
 	( cd "$(PLUS_DIST)" && sha256sum * > SHA256SUMS ); \
+	grep -q 'newt_linux_amd64' "$(PLUS_DIST)/SHA256SUMS"; \
 	echo ""; \
 	echo "plus-release-binaries: $$count assets + SHA256SUMS → $(PLUS_DIST)/"; \
 	ls -la "$(PLUS_DIST)"

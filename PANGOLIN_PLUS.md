@@ -96,7 +96,7 @@ So pangolin-plus is:
 **Full plus stack:** pull GHCR images (or build from this tree) and run plus newt/olm on site/user hosts; deploy mounts monorepo badger.  
 **Stock clients:** fine for smoke tests against a plus server, but **you will not get mined newt/olm/badger fixes** until those hosts run plus-built binaries / monorepo localPlugins.
 
-**Maintainer cut a release:** `git tag v1.21.1-plus && git push origin v1.21.1-plus` → plus-release workflow.
+**Maintainer cut a release:** `git tag v1.21.1-plus && git push origin v1.21.1-plus` → plus-release workflow. After first GHCR push, set each package (`pangolin`/`gerbil`/`newt`/`olm`) visibility to **Public** for anonymous pull. Binary release still publishes if the images job fails.
 
 **fosrl deploy fallback:** `pangolin_image=fosrl/pangolin:1.21.1` `gerbil_image=fosrl/gerbil:latest` `pull_images=true` (guard keys on image **names**, not `image_registry`).
 ---

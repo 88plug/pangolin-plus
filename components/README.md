@@ -31,8 +31,10 @@ Stock clients work against a plus **server**, but you **must** run plus-built ne
 ```bash
 export TAG=v1.21.1-plus
 docker pull ghcr.io/88plug/pangolin-plus/newt:${TAG}
+# scripts verify SHA256SUMS; VERSION accepts v1.21.1-plus or 1.21.1-plus
 curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-newt.sh | sh
 curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-olm.sh | sh
+# gerbil is container-first; optional linux host binary: scripts/get-plus-gerbil.sh
 ```
 
 ### Build (from repo root)
