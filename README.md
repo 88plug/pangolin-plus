@@ -34,9 +34,9 @@
 |------|----------|------|
 | Server (this root) | fosrl/pangolin **1.21.1** | BYOC PEM, tunnels, graveyard ports, … |
 | [`components/newt`](components/newt) | fosrl/newt **1.15.0** | Reconnect/health/registration pack, prefer-local-routes |
-| [`components/gerbil`](components/gerbil) | fosrl/gerbil **1.4.3** | Vendored (mine next) |
-| [`components/olm`](components/olm) | fosrl/olm **1.8.1** | Vendored (mine next) |
-| [`components/badger`](components/badger) | fosrl/badger **v1.5.0** | Vendored (mine next) |
+| [`components/gerbil`](components/gerbil) | fosrl/gerbil **1.4.3** | **Mined** (URL sanitize, Stop once) |
+| [`components/olm`](components/olm) | fosrl/olm **1.8.1** | **Mined** (WS re-register) |
+| [`components/badger`](components/badger) | fosrl/badger **v1.5.0** | **Mined** (real-IP headers + tests) |
 
 ---
 
