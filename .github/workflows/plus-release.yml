@@ -13,6 +13,12 @@
 #   # or: Actions → Plus Release → Run workflow
 #   # After first publish: set GHCR package visibility to Public for anonymous pull
 #
+# Checkout rules:
+#   push tags:         checkout the tag (GITHUB_REF_NAME)
+#   workflow_dispatch: checkout the branch commit selected in the Actions UI
+#                      (github.sha) — tag input is VERSION / image label only.
+#                      dry_run does NOT require the tag to exist on the remote.
+#
 # Upstream fosrl AWS/Docker Hub pipeline is disabled:
 #   .github/workflows/cicd.fosrl-upstream.yml.disabled
 
@@ -28,11 +34,11 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (e.g. v1.21.1-plus). Checkout + image/binary labels."
+        description: "Version label (e.g. v1.21.1-plus). Labels images/binaries; does not need to exist for dry_run. Code is checked out from the branch selected above."
         required: true
         type: string
       dry_run:
-        description: "Build only — skip GHCR push and GitHub Release"
+        description: "Build only — skip GHCR push and GitHub Release (uses branch HEAD, not a tag)"
         required: false
         type: boolean
         default: false
@@ -65,6 +71,8 @@ jobs:
       dry_run: ${{ steps.meta.outputs.dry_run }}
       push_images: ${{ steps.meta.outputs.push_images }}
       checkout_ref: ${{ steps.meta.outputs.checkout_ref }}
+      tag_exists: ${{ steps.meta.outputs.tag_exists }}
+      create_release: ${{ steps.meta.outputs.create_release }}
     steps:
       - name: Compute release metadata
         id: meta
@@ -75,18 +83,24 @@ jobs:
           INPUT_TAG: ${{ inputs.tag }}
           INPUT_DRY_RUN: ${{ inputs.dry_run }}
           GITHUB_REF: ${{ github.ref }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_ALLOWLIST: ${{ env.TAG_ALLOWLIST }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             TAG="${INPUT_TAG:-}"
             DRY_RUN="${INPUT_DRY_RUN:-false}"
-            # Dispatch must build the tagged commit, not branch HEAD
-            CHECKOUT_REF="$TAG"
+            # Build code from the branch/commit selected in the Actions UI.
+            # Tag input is VERSION labeling only — dry_run must work before first tag push.
+            CHECKOUT_REF="${GITHUB_SHA}"
           else
-            TAG="${GITHUB_REF#refs/tags/}"
+            # push tags: GITHUB_REF_NAME is the tag name
+            TAG="${GITHUB_REF_NAME}"
             DRY_RUN="false"
-            CHECKOUT_REF="$TAG"
+            CHECKOUT_REF="${GITHUB_REF_NAME}"
           fi
           if [ -z "$TAG" ]; then
             echo "Error: empty tag"
@@ -111,6 +125,29 @@ jobs:
           else
             PUSH_IMAGES="true"
           fi
+
+          # Does the git tag already exist on the remote? (release job requires it)
+          TAG_EXISTS="false"
+          if [ "$EVENT_NAME" = "push" ]; then
+            TAG_EXISTS="true"
+          else
+            code=$(curl -sS -o /dev/null -w "%{http_code}" \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" || true)
+            if [ "$code" = "200" ]; then
+              TAG_EXISTS="true"
+            fi
+          fi
+
+          # Publish GitHub Release only when not dry_run and the tag exists
+          # (tag-push events always; dispatch only if tag already pushed)
+          CREATE_RELEASE="false"
+          if [ "$DRY_RUN" != "true" ] && [ "$TAG_EXISTS" = "true" ]; then
+            CREATE_RELEASE="true"
+          fi
+
           {
             echo "tag=$TAG"
             echo "version=$VERSION"
@@ -118,8 +155,10 @@ jobs:
             echo "dry_run=$DRY_RUN"
             echo "push_images=$PUSH_IMAGES"
             echo "checkout_ref=$CHECKOUT_REF"
+            echo "tag_exists=$TAG_EXISTS"
+            echo "create_release=$CREATE_RELEASE"
           } >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG version=$VERSION is_rc=$IS_RC dry_run=$DRY_RUN push_images=$PUSH_IMAGES checkout_ref=$CHECKOUT_REF"
+          echo "tag=$TAG version=$VERSION is_rc=$IS_RC dry_run=$DRY_RUN push_images=$PUSH_IMAGES checkout_ref=$CHECKOUT_REF tag_exists=$TAG_EXISTS create_release=$CREATE_RELEASE"
 
   images:
     name: Build & push images
@@ -350,12 +389,14 @@ jobs:
   release:
     name: GitHub Release
     # Binary release proceeds even if images fail (clients still need assets).
+    # Requires an existing git tag (tag-push, or dispatch after tag exists).
+    # dry_run never creates a release; dispatch without a remote tag skips release.
     needs: [meta, images, binaries]
     if: >-
       always()
       && needs.meta.result == 'success'
       && needs.binaries.result == 'success'
-      && needs.meta.outputs.dry_run != 'true'
+      && needs.meta.outputs.create_release == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
