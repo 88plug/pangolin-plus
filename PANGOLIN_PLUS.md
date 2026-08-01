@@ -315,9 +315,11 @@ Always branch from **upstream tag/main**, not from a mixed monorepo dump, so rev
 
 | Ref | Purpose |
 |-----|---------|
-| fosrl/* tags | Upstream sources of truth |
-| `claude/pangolin-plus` | **Only** product branch — server + components + deploy |
-| Standalone `~/newt-plus` | Mining workspace only → see `MOVED.md`; do not treat as product |
+| **[88plug/pangolin-plus](https://github.com/88plug/pangolin-plus) `main`** | **Product** — ship here |
+| `origin` | 88plug/pangolin-plus |
+| `upstream` | fosrl/pangolin (fetch/merge only) |
+| fosrl/* tags | Upstream sources of truth for each component |
+| See [UPSTREAM.md](UPSTREAM.md) | Sync + port-back workflow |
 
 ---
 

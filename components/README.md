@@ -12,7 +12,7 @@ repos (and any useful fork PRs), apply plus deltas here, and build one distribut
 | **badger/** | [fosrl/badger](https://github.com/fosrl/badger) | **v1.5.0** | **Mined** — trusted-hop real-IP headers + unit tests |
 | *(server root)* | [fosrl/pangolin](https://github.com/fosrl/pangolin) | **1.21.1** | **Mined** — see [PANGOLIN_PLUS.md](../PANGOLIN_PLUS.md) |
 
-Nested `.git` dirs are removed so history is the single `claude/pangolin-plus` branch.
+Nested `.git` dirs are removed so history is the single product `main` branch on [88plug/pangolin-plus](https://github.com/88plug/pangolin-plus).
 
 ### Build
 
