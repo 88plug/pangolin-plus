@@ -193,10 +193,10 @@ jobs:
           grep APP_VERSION server/lib/consts.ts
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Log in to GHCR
         if: needs.meta.outputs.push_images == 'true'
@@ -244,7 +244,7 @@ jobs:
       # dry_run (push=false): load amd64 into local docker for entrypoint smoke.
       # Real release: multi-arch push (load is incompatible with multi-platform push).
       - name: Build pangolin
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: Dockerfile
@@ -263,7 +263,7 @@ jobs:
           provenance: false
 
       - name: Build gerbil
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: components/gerbil
           file: components/gerbil/Dockerfile
@@ -278,7 +278,7 @@ jobs:
           provenance: false
 
       - name: Build newt
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: components/newt
           file: components/newt/Dockerfile
@@ -295,7 +295,7 @@ jobs:
           provenance: false
 
       - name: Build olm
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: components/olm
           file: components/olm/Dockerfile
@@ -410,7 +410,7 @@ jobs:
           ref: ${{ needs.meta.outputs.checkout_ref }}
 
       - name: Download binaries
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: plus-binaries-${{ needs.meta.outputs.version }}
           path: dist/plus/
@@ -514,7 +514,7 @@ jobs:
           cat /tmp/release-notes.md
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@6cbd405e2c4e67a21c47fa9e383d020e4e28b836 # v2.3.2
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v2.3.2
         with:
           tag_name: ${{ needs.meta.outputs.tag }}
           name: pangolin-plus ${{ needs.meta.outputs.tag }}
