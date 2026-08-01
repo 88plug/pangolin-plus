@@ -1,3 +1,15 @@
+# DISABLED for 88plug/pangolin-plus public releases.
+#
+# This is the upstream fosrl-shaped pipeline (AWS EC2 self-hosted runners,
+# docker.io/fosrl/*, Docker Hub secrets, Cosign). It is NOT the product default.
+#
+# Product releases: .github/workflows/plus-release.yml (GitHub-hosted → GHCR +
+# GitHub Releases). Tag scheme: vX.Y.Z-plus / X.Y.Z-plus.
+#
+# To revive this file for a private fosrl-parity fork, rename back to cicd.yml
+# and supply the AWS/Docker Hub secrets listed below. Do not push to fosrl/*
+# from this monorepo.
+#
 name: Public CICD Pipeline
 
 # CI/CD workflow for building, publishing, mirroring, signing container images and building release binaries.

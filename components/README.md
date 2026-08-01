@@ -16,15 +16,24 @@ Nested `.git` dirs are removed so history is the single product `main` branch on
 
 ### Who publishes what
 
-| Piece | Upstream ships | Plus builds |
-|-------|----------------|-------------|
-| Pangolin server images | `fosrl/pangolin:*` (GHCR/Docker Hub) | `make plus-images` → `pangolin-plus/pangolin:local` |
-| Gerbil images | `fosrl/gerbil:*` | `pangolin-plus/gerbil:local` |
-| Newt images/binaries | `fosrl/newt` + install scripts | `components/newt/bin/newt` or `pangolin-plus/newt:local` |
-| Olm images/binaries | `fosrl/olm` + desktop apps on pangolin.net | `components/olm/bin/olm` or `pangolin-plus/olm:local` |
+| Piece | Upstream ships | Plus ships / builds |
+|-------|----------------|---------------------|
+| Pangolin server images | `fosrl/pangolin:*` (GHCR/Docker Hub) | **`ghcr.io/88plug/pangolin-plus/pangolin:TAG`** or `make plus-images` → local |
+| Gerbil images | `fosrl/gerbil:*` | **`ghcr.io/88plug/pangolin-plus/gerbil:TAG`** / local |
+| Newt images/binaries | `fosrl/newt` + `get-newt.sh` | **Releases + `scripts/get-plus-newt.sh`** / local |
+| Olm images/binaries | `fosrl/olm` + desktop apps on pangolin.net | **Releases + `scripts/get-plus-olm.sh`** / local |
 | Badger | Traefik plugin catalog / git tag | `components/badger` as **localPlugins** (not a long-running image) |
 
-Stock clients work against a plus **server**, but you **must** run plus-built newt/olm (and monorepo badger localPlugins) to get the mined client/plugin fixes in the table above. Binary names stay `newt` / `olm` / `gerbil`; image tags are `pangolin-plus/*` (or your registry).
+Stock clients work against a plus **server**, but you **must** run plus-built newt/olm (and monorepo badger localPlugins) to get the mined client/plugin fixes in the table above. Binary names stay `newt` / `olm` / `gerbil`; published images are `ghcr.io/88plug/pangolin-plus/*`.
+
+### User install (published)
+
+```bash
+export TAG=v1.21.1-plus
+docker pull ghcr.io/88plug/pangolin-plus/newt:${TAG}
+curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-newt.sh | sh
+curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-olm.sh | sh
+```
 
 ### Build (from repo root)
 
@@ -33,10 +42,13 @@ Stock clients work against a plus **server**, but you **must** run plus-built ne
 make components-build
 make components-test
 
+# Multi-OS release assets → dist/plus/ (newt_*, olm_*, gerbil_*)
+# make plus-release-binaries VERSION=1.21.1-plus
+
 # Local Docker images (pangolin-plus/*:local)
 make plus-images
 # Optional registry push (explicit registry required; refuses fosrl/*):
-# make plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus PLUS_TAG=local
+# make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus PLUS_TAG=1.21.1-plus
 
 # Or compose contexts:
 docker compose -f compose.plus.yaml build
@@ -52,10 +64,13 @@ docker compose -f compose.plus.yaml up -d
 | Target | Output |
 |--------|--------|
 | `make components-build` | `newt`, `gerbil`, `olm` binaries under `components/*/bin/` |
+| `make plus-release-binaries VERSION=…` | Multi-OS assets under `dist/plus/` (+ SHA256SUMS) |
 | `make plus-images` | Docker tags `pangolin-plus/{pangolin,gerbil,newt,olm}:local` |
 | `make -C components/olm local` | User client only (not a compose service) |
 | badger | Plugin source — `compose.plus` bind-mounts + deploy copies as Traefik `localPlugins` |
 | `make plus-guards-selftest` | Guard smoke + compose config + ansible syntax-check |
+
+**Published path:** tag `vX.Y.Z-plus` → `.github/workflows/plus-release.yml` (GHCR multi-arch + Release assets).
 
 **fosrl stock fallback (deploy):** set `pangolin_image=fosrl/pangolin:1.21.1`, `gerbil_image=fosrl/gerbil:latest`, `pull_images=true`. See [deploy/README.md](../deploy/README.md).
 
