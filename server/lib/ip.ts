@@ -2,6 +2,9 @@ import { db, SiteResource, siteResources, Transaction } from "@server/db";
 import { clients, orgs, sites } from "@server/db";
 import { and, eq, isNotNull } from "drizzle-orm";
 import config from "@server/lib/config";
+// Side-effect: register Zod .openapi() before schemas below use it.
+// Unit tests import this module without server/index.ts, so extend here.
+import "@server/extendZod";
 import z from "zod";
 import logger from "@server/logger";
 import semver from "semver";

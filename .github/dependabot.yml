@@ -1,11 +1,17 @@
 version: 2
 
+# One open PR per ecosystem (limit 1) → up to 4 concurrent PRs (npm/docker/gha/gomod).
+# That is expected noise, not product PRs. Majors we already judgment-gated are ignored.
 updates:
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "daily"
     open-pull-requests-limit: 1
+    # typescript 7 needs typescript-eslint peer <6.1; stay on TS 6 until eslint chain catches up
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     groups:
       npm-dependencies:
         patterns:
@@ -16,6 +22,12 @@ updates:
     schedule:
       interval: "daily"
     open-pull-requests-limit: 1
+    # package.json engines: ">=22 <26"; Docker images stay on Node 24
+    ignore:
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "docker/library/node"
+        update-types: ["version-update:semver-major"]
     groups:
       docker-dependencies:
         patterns:
