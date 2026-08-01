@@ -54,7 +54,7 @@ Stock `fosrl/*` does **not** carry monorepo deltas.
 ```yaml
 # pangolin.yml (or -e)
 image_registry: ghcr.io/88plug/pangolin-plus
-image_tag: v1.21.1-plus   # or 1.21.1-plus / latest
+image_tag: v1.21.2-plus   # or 1.21.2-plus / latest
 pull_images: true
 ```
 
@@ -71,19 +71,19 @@ curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/g
 # Binaries (site newt / user olm):
 make components-build
 # Multi-OS release staging:
-# make plus-release-binaries VERSION=1.21.1-plus
+# make plus-release-binaries VERSION=1.21.2-plus
 
 # Controller + edge images (local tags):
 make plus-images
 # Load/transfer images to the VPS, then run the playbook with defaults.
 # Or push then pull:
-make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus PLUS_TAG=v1.21.1-plus VERSION=1.21.1-plus
+make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus PLUS_TAG=v1.21.2-plus VERSION=1.21.2-plus
 ```
 
 ```yaml
 # pangolin.yml (or -e) after your own push
 image_registry: ghcr.io/88plug/pangolin-plus
-image_tag: v1.21.1-plus
+image_tag: v1.21.2-plus
 pull_images: true
 ```
 
@@ -121,8 +121,8 @@ Defaults rewrite compose images to **published pangolin-plus** (GHCR) and pull:
 
 | Var | Default |
 |-----|---------|
-| `pangolin_image` | `ghcr.io/88plug/pangolin-plus/pangolin:v1.21.1-plus` |
-| `gerbil_image` | `ghcr.io/88plug/pangolin-plus/gerbil:v1.21.1-plus` |
+| `pangolin_image` | `ghcr.io/88plug/pangolin-plus/pangolin:v1.21.2-plus` |
+| `gerbil_image` | `ghcr.io/88plug/pangolin-plus/gerbil:v1.21.2-plus` |
 | `traefik_image` | `traefik:v3.7` |
 | `pull_images` | `true` |
 | `resync_badger` | `true` (re-copy monorepo badger when present on control node) |

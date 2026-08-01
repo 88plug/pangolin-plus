@@ -41,8 +41,8 @@
     # Product default = published GHCR plus (match latest release tag).
     # Local: pangolin-plus/pangolin:local + pull_images=false
     # Stock: fosrl/pangolin:1.21.1 + force_demote=true if leaving plus
-    pangolin_image: "ghcr.io/88plug/pangolin-plus/pangolin:v1.21.1-plus"
-    gerbil_image: "ghcr.io/88plug/pangolin-plus/gerbil:v1.21.1-plus"
+    pangolin_image: "ghcr.io/88plug/pangolin-plus/pangolin:v1.21.2-plus"
+    gerbil_image: "ghcr.io/88plug/pangolin-plus/gerbil:v1.21.2-plus"
     traefik_image: "traefik:v3.7"
     # true = docker compose pull (registry). false = local tags only.
     pull_images: true
@@ -166,8 +166,8 @@
           Target pangolin={{ pangolin_image }} gerbil={{ gerbil_image }}
           would demote at least one service off plus.
           Stay on plus (published):
-            -e pangolin_image=ghcr.io/88plug/pangolin-plus/pangolin:v1.21.1-plus
-            -e gerbil_image=ghcr.io/88plug/pangolin-plus/gerbil:v1.21.1-plus
+            -e pangolin_image=ghcr.io/88plug/pangolin-plus/pangolin:v1.21.2-plus
+            -e gerbil_image=ghcr.io/88plug/pangolin-plus/gerbil:v1.21.2-plus
             -e pull_images=true
           Stay on plus (local):
             -e pangolin_image=pangolin-plus/pangolin:local
