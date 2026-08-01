@@ -1,13 +1,13 @@
 all: go-build-release
 
 # pangolin-plus product defaults — GHCR image tags on 88plug/pangolin-plus.
-# Override: make go-build-release PANGOLIN_VERSION=v1.21.2-plus GERBIL_VERSION=v1.21.2-plus
+# Override: make go-build-release PANGOLIN_VERSION=v1.21.3-plus GERBIL_VERSION=v1.21.3-plus
 # Stock fosrl (no plus deltas): set versions from fosrl tags and edit docker-compose image lines.
 
 PLUS_RELEASES_API ?= https://api.github.com/repos/88plug/pangolin-plus/releases/latest
 PANGOLIN_VERSION ?= $(shell curl -fsSL $(PLUS_RELEASES_API) 2>/dev/null | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)
 ifeq ($(strip $(PANGOLIN_VERSION)),)
-PANGOLIN_VERSION := v1.21.2-plus
+PANGOLIN_VERSION := v1.21.3-plus
 endif
 # Same monorepo release tags all four images
 GERBIL_VERSION ?= $(PANGOLIN_VERSION)

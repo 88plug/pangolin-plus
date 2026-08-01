@@ -3,7 +3,7 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/install/get-installer.sh | sh
 # Pin:
-#   VERSION=v1.21.2-plus sh get-installer.sh
+#   VERSION=v1.21.3-plus sh get-installer.sh
 #
 # Stock upstream installer (no plus images):
 #   curl -fsSL https://raw.githubusercontent.com/fosrl/installer/main/get-installer.sh | bash

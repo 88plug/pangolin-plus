@@ -6,8 +6,8 @@ One monorepo product that **mines** [fosrl/pangolin](https://github.com/fosrl/pa
 > **The bar for every change:** one a thoughtful upstream maintainer would accept — small, focused, tested, verified before it ships. Product home: **[88plug/pangolin-plus](https://github.com/88plug/pangolin-plus)** (`main`). Upstream [fosrl/pangolin](https://github.com/fosrl/pangolin) is remote **`upstream`** for sync/port only. Nothing here is a throwaway hack. We do **not** publish separate `newt-plus` / `olm-plus` products — clients live under `components/{newt,olm}` in this tree only.
 
 **Product version (two related strings):**
-- **Git tag / image tag:** `vX.Y.Z-plus` (leading `v`, e.g. `v1.21.2-plus`) — used on GitHub Releases and GHCR.
-- **`APP_VERSION` / binary `--version`:** `X.Y.Z-plus` (no leading `v`; plus-release strips it from the tag into `server/lib/consts.ts`). Example after a release cut: `1.21.2-plus`.
+- **Git tag / image tag:** `vX.Y.Z-plus` (leading `v`, e.g. `v1.21.3-plus`) — used on GitHub Releases and GHCR.
+- **`APP_VERSION` / binary `--version`:** `X.Y.Z-plus` (no leading `v`; plus-release strips it from the tag into `server/lib/consts.ts`). Example after a release cut: `1.21.3-plus`.
 - In-tree main may still show base upstream `1.21.1` in `APP_VERSION` until the next tag rewrite.
 - Root `package.json` `"version": "0.0.0"` is a private monorepo placeholder, not the product release.
 
@@ -83,8 +83,8 @@ So pangolin-plus is:
 - `compose.plus.yaml` builds pangolin + gerbil; uses `traefik_config.plus.yml` + monorepo badger localPlugins (`compose.example` keeps stock catalog config); newt profile `lab` restart `"no"`
 - `make components-build` → newt + gerbil + olm binaries; `make plus-images` → `pangolin-plus/*:local`; `make plus-release-binaries VERSION=…` → `dist/plus/`
 - Install scripts: `scripts/get-plus-newt.sh` / `scripts/get-plus-olm.sh` (stock: fosrl `get-*.sh` or `REPO=fosrl/newt`)
-- Ansible **`deploy/pangolin.yml`** defaults: plus **local** tags (`pangolin-plus/*:local`, `pull_images: false`) + monorepo badger localPlugins; set GHCR (`image_registry=ghcr.io/88plug/pangolin-plus`, `image_tag=v1.21.2-plus`, `pull_images=true`) or fosrl via overrides
-- Ansible **`deploy/upgrade-pangolin.yml`** defaults: **published GHCR plus** (`ghcr.io/88plug/pangolin-plus/{pangolin,gerbil}:v1.21.2-plus`, `pull_images: true`); demote guard keeps plus→stock from silent fallback
+- Ansible **`deploy/pangolin.yml`** defaults: plus **local** tags (`pangolin-plus/*:local`, `pull_images: false`) + monorepo badger localPlugins; set GHCR (`image_registry=ghcr.io/88plug/pangolin-plus`, `image_tag=v1.21.3-plus`, `pull_images=true`) or fosrl via overrides
+- Ansible **`deploy/upgrade-pangolin.yml`** defaults: **published GHCR plus** (`ghcr.io/88plug/pangolin-plus/{pangolin,gerbil}:v1.21.3-plus`, `pull_images: true`); demote guard keeps plus→stock from silent fallback
 - Traefik pin: **v3.7** (compose + deploy + installer)
 - **Installer (`install/`)** writes compose with **`ghcr.io/88plug/pangolin-plus/{pangolin,gerbil}`** (same product tags as Releases). Catalog Badger version pin remains for Traefik plugins API; monorepo real-IP badger is via compose.plus / Ansible localPlugins. Download: `install/get-installer.sh` → `installer_*` on plus Releases.
 
@@ -103,7 +103,7 @@ So pangolin-plus is:
 **Full plus stack:** pull GHCR images (or build from this tree) and run plus newt/olm on site/user hosts; deploy mounts monorepo badger.  
 **Stock clients:** fine for smoke tests against a plus server, but **you will not get mined newt/olm/badger fixes** until those hosts run plus-built binaries / monorepo localPlugins.
 
-**Maintainer cut a release:** `git tag v1.21.2-plus && git push origin v1.21.2-plus` → plus-release workflow. After first GHCR push, set each package (`pangolin`/`gerbil`/`newt`/`olm`) visibility to **Public** for anonymous pull. Binary release still publishes if the images job fails.
+**Maintainer cut a release:** `git tag v1.21.3-plus && git push origin v1.21.3-plus` → plus-release workflow. After first GHCR push, set each package (`pangolin`/`gerbil`/`newt`/`olm`) visibility to **Public** for anonymous pull. Binary release still publishes if the images job fails.
 
 **fosrl deploy fallback:** `pangolin_image=fosrl/pangolin:1.21.1` `gerbil_image=fosrl/gerbil:latest` `pull_images=true` (guard keys on image **names**, not `image_registry`).
 ---
@@ -321,7 +321,7 @@ make components-test
 make plus-images
 # Optional push (refuses fosrl / ghcr.io/fosrl namespaces):
 # Published path (GHCR):
-# make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus PLUS_TAG=v1.21.2-plus VERSION=1.21.2-plus
+# make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus PLUS_TAG=v1.21.3-plus VERSION=1.21.3-plus
 
 # Compose edge stack (traefik:v3.7)
 docker compose -f compose.plus.yaml up -d --build

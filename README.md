@@ -6,12 +6,12 @@ One monorepo. One product. We take [fosrl/pangolin](https://github.com/fosrl/pan
 
 | | |
 |---|---|
-| **Latest release** | [`v1.21.2-plus`](https://github.com/88plug/pangolin-plus/releases/tag/v1.21.2-plus) |
+| **Latest release** | [`v1.21.3-plus`](https://github.com/88plug/pangolin-plus/releases/tag/v1.21.3-plus) |
 | **Images** | `ghcr.io/88plug/pangolin-plus/{pangolin,gerbil,newt,olm}` |
 | **Full delta matrix** | [PANGOLIN_PLUS.md](PANGOLIN_PLUS.md) |
 | **Upstream docs** | [docs.pangolin.net](https://docs.pangolin.net) |
 
-**Version source of truth:** git tag / GHCR image tag `vX.Y.Z-plus` (e.g. `v1.21.2-plus`). Plus-release rewrites `APP_VERSION` in [`server/lib/consts.ts`](server/lib/consts.ts) to `X.Y.Z-plus` (no leading `v`). Root `package.json` `"version": "0.0.0"` is a private monorepo placeholder only.
+**Version source of truth:** git tag / GHCR image tag `vX.Y.Z-plus` (e.g. `v1.21.3-plus`). Plus-release rewrites `APP_VERSION` in [`server/lib/consts.ts`](server/lib/consts.ts) to `X.Y.Z-plus` (no leading `v`). Root `package.json` `"version": "0.0.0"` is a private monorepo placeholder only.
 
 ---
 
@@ -24,7 +24,7 @@ Everything below pulls **pangolin-plus** (GHCR + this repo’s Releases). Stock 
 ```bash
 # Downloads installer_* from 88plug/pangolin-plus releases; compose uses GHCR plus images
 curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/install/get-installer.sh \
-  | VERSION=v1.21.2-plus sh
+  | VERSION=v1.21.3-plus sh
 ./installer
 ```
 
@@ -33,7 +33,7 @@ Or from a clone: `cd install && make go-build-release && ./bin/installer_linux_a
 ### 2. Controller + edge (Docker Compose)
 
 ```bash
-export TAG=v1.21.2-plus
+export TAG=v1.21.3-plus
 
 export PANGOLIN_IMAGE=ghcr.io/88plug/pangolin-plus/pangolin:${TAG}
 export GERBIL_IMAGE=ghcr.io/88plug/pangolin-plus/gerbil:${TAG}
@@ -49,12 +49,12 @@ docker compose -f compose.plus.yaml up -d --no-build
 ```bash
 # Checksum-verified from GitHub Releases (VERSION with or without leading v)
 curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-newt.sh \
-  | VERSION=v1.21.2-plus sh
+  | VERSION=v1.21.3-plus sh
 
 curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-olm.sh \
-  | VERSION=v1.21.2-plus sh
+  | VERSION=v1.21.3-plus sh
 
-newt --version   # → Newt version 1.21.2-plus
+newt --version   # → Newt version 1.21.3-plus
 ```
 
 Gerbil usually runs as the edge **container** above. Optional host binary: `scripts/get-plus-gerbil.sh` (linux only).
@@ -65,7 +65,7 @@ Gerbil usually runs as the edge **container** above. Optional host binary: `scri
 cd deploy
 cp inventory.ini.example inventory.ini   # set domain / secrets
 # defaults are plus-local; for published images:
-#   image_registry=ghcr.io/88plug/pangolin-plus image_tag=v1.21.2-plus pull_images=true
+#   image_registry=ghcr.io/88plug/pangolin-plus image_tag=v1.21.3-plus pull_images=true
 ansible-playbook -i inventory.ini pangolin.yml
 ```
 
@@ -88,7 +88,7 @@ Plus clients and the controller talk the same WireGuard/control protocol as upst
 
 ## What’s improved (app-plus mining)
 
-All of this lives under **this tree** and is what `v1.21.2-plus` builds and publishes.
+All of this lives under **this tree** and is what `v1.21.3-plus` builds and publishes.
 
 | Piece | Base | In the release |
 |-------|------|----------------|
@@ -128,10 +128,10 @@ docker compose -f compose.plus.yaml up -d
 
 ```bash
 # Optional dry-run (no push, no GitHub Release):
-#   gh workflow run "Plus Release" -f tag=v1.21.2-plus -f dry_run=true
+#   gh workflow run "Plus Release" -f tag=v1.21.3-plus -f dry_run=true
 
-git tag v1.21.2-plus
-git push origin v1.21.2-plus
+git tag v1.21.3-plus
+git push origin v1.21.3-plus
 # → multi-arch GHCR images + Release assets
 ```
 
