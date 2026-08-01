@@ -47,22 +47,42 @@ Playbooks default to **plus local tags** (same as `compose.plus.yaml` / `make pl
 
 ### Plus-built (recommended for mined fixes)
 
-Stock `fosrl/*` does **not** carry monorepo deltas. Build plus artifacts first:
+Stock `fosrl/*` does **not** carry monorepo deltas.
+
+**Published (preferred):** pull GHCR from a `vX.Y.Z-plus` release:
+
+```yaml
+# pangolin.yml (or -e)
+image_registry: ghcr.io/88plug/pangolin-plus
+image_tag: v1.21.1-plus   # or 1.21.1-plus / latest
+pull_images: true
+```
+
+Site / user clients from the same release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-newt.sh | sh
+curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-olm.sh | sh
+```
+
+**Build locally** if you need unreleased trees:
 
 ```bash
 # Binaries (site newt / user olm):
 make components-build
+# Multi-OS release staging:
+# make plus-release-binaries VERSION=1.21.1-plus
 
 # Controller + edge images (local tags):
 make plus-images
 # Load/transfer images to the VPS, then run the playbook with defaults.
 # Or push then pull:
-make plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus PLUS_TAG=1.21.1-plus
+make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus PLUS_TAG=1.21.1-plus VERSION=1.21.1-plus
 ```
 
 ```yaml
-# pangolin.yml (or -e)
-image_registry: ghcr.io/you/pangolin-plus
+# pangolin.yml (or -e) after your own push
+image_registry: ghcr.io/88plug/pangolin-plus
 image_tag: 1.21.1-plus
 pull_images: true
 ```

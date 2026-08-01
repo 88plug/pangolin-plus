@@ -526,7 +526,9 @@ clean:
 #
 # Binaries (go build → bin/):  make components-build
 # Local Docker images:         make plus-images
-# Optional registry push:      make plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus
+# Optional registry push:      make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus
+# Multi-OS release binaries:   make plus-release-binaries VERSION=1.21.1-plus
+# Product CI:                  .github/workflows/plus-release.yml (tag vX.Y.Z-plus)
 #
 # badger is a Traefik plugin (Go module), not a long-running image:
 #   copy components/badger into Traefik localPlugins, or build with traefik yaegi.
@@ -540,12 +542,15 @@ PLUS_LOCAL_TAG ?= local
 # Optional versioned tag: make plus-images VERSION=1.21.1-plus
 VERSION ?=
 PLUS_BUILD_VERSION = $(if $(VERSION),$(VERSION),$(PLUS_TAG))
+# Staged multi-OS binaries for GitHub Releases (see plus-release-binaries)
+PLUS_DIST ?= dist/plus
 
 .PHONY: components-test components-build \
 	newt-test newt-build gerbil-build olm-build badger-test \
 	plus-images plus-images-push plus-image-pangolin plus-image-gerbil \
 	plus-image-newt plus-image-olm plus-check-vars plus-check-docker \
-	plus-check-fosrl-registry plus-guards-selftest plus-verify
+	plus-check-fosrl-registry plus-guards-selftest plus-verify \
+	plus-release-binaries
 
 # Shared guards for image tags (empty / unsafe chars in tag vars + retag source).
 # PLUS_* values are trusted Make variables — do not pass untrusted $(shell) input.
@@ -669,10 +674,11 @@ plus-images: plus-image-pangolin plus-image-gerbil plus-image-newt plus-image-ol
 	@echo "Lab newt:  NEWT_ID=... NEWT_SECRET=... docker compose -f compose.plus.yaml --profile lab up -d"
 
 # Optional: push to a registry you control. Does NOT default to GHCR.
+# Product default registry: ghcr.io/88plug/pangolin-plus
 # Always retags from PLUS_LOCAL_REGISTRY/*:PLUS_LOCAL_TAG when src exists so a
 # second push after rebuild ships the new layers (never keep a stale dest tag):
 #   make plus-images
-#   make plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus PLUS_TAG=local
+#   make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus PLUS_TAG=1.21.1-plus VERSION=1.21.1-plus
 plus-images-push: plus-check-vars plus-check-fosrl-registry plus-check-docker
 	@for name in pangolin gerbil newt olm; do \
 		src="$(PLUS_LOCAL_REGISTRY)/$$name:$(PLUS_LOCAL_TAG)"; \
@@ -747,3 +753,52 @@ plus-guards-selftest: plus-check-vars
 # Composite verify for plus client stack wiring (no full image build unless already present)
 plus-verify: plus-guards-selftest components-build components-test
 	@echo "plus-verify: PASS"
+
+# --- plus multi-OS release binaries (GitHub Release assets) ---
+# Builds component go-build-release targets and stages under dist/plus/ with
+# upstream asset names (newt_linux_amd64, olm_darwin_arm64, gerbil_linux_amd64, …).
+# Binary names inside archives stay newt/olm/gerbil; release assets keep platform suffix.
+#
+#   make plus-release-binaries VERSION=1.21.1-plus
+#   ls dist/plus/
+plus-release-binaries:
+	@if [ -z "$(VERSION)" ]; then \
+		echo "Error: VERSION is required. Usage: make plus-release-binaries VERSION=1.21.1-plus"; \
+		exit 1; \
+	fi
+	@case "$(VERSION)" in \
+		*[\'\"\\\;\|\$$\`\ \	]*) echo "Error: VERSION contains unsafe chars"; exit 1;; \
+	esac
+	@command -v go >/dev/null || { echo "Error: go not found"; exit 1; }
+	@rm -rf "$(PLUS_DIST)"
+	@mkdir -p "$(PLUS_DIST)"
+	@echo "Building newt release binaries (VERSION=$(VERSION))..."
+	$(MAKE) -C components/newt go-build-release VERSION="$(VERSION)"
+	@echo "Building olm release binaries (VERSION=$(VERSION))..."
+	$(MAKE) -C components/olm go-build-release VERSION="$(VERSION)"
+	@echo "Building gerbil release binaries (linux amd64/arm64)..."
+	$(MAKE) -C components/gerbil go-build-release
+	@# Stage with stable asset names (underscores — matches get-plus-*.sh / upstream get-*.sh)
+	@set -e; \
+	for f in components/newt/bin/newt_*; do \
+		[ -f "$$f" ] || continue; \
+		cp -f "$$f" "$(PLUS_DIST)/$$(basename "$$f")"; \
+	done; \
+	for f in components/olm/bin/olm_*; do \
+		[ -f "$$f" ] || continue; \
+		cp -f "$$f" "$(PLUS_DIST)/$$(basename "$$f")"; \
+	done; \
+	for f in components/gerbil/bin/gerbil_*; do \
+		[ -f "$$f" ] || continue; \
+		cp -f "$$f" "$(PLUS_DIST)/$$(basename "$$f")"; \
+	done; \
+	count=$$(find "$(PLUS_DIST)" -type f ! -name SHA256SUMS | wc -l); \
+	if [ "$$count" -lt 3 ]; then \
+		echo "Error: expected staged binaries under $(PLUS_DIST), found $$count"; \
+		ls -la "$(PLUS_DIST)" || true; \
+		exit 1; \
+	fi; \
+	( cd "$(PLUS_DIST)" && sha256sum * > SHA256SUMS ); \
+	echo ""; \
+	echo "plus-release-binaries: $$count assets + SHA256SUMS → $(PLUS_DIST)/"; \
+	ls -la "$(PLUS_DIST)"

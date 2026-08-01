@@ -1,7 +1,10 @@
 #!/bin/bash
 
-# Get Olm - Cross-platform installation script
+# Get Olm - Cross-platform installation script (stock fosrl assets)
 # Usage: curl -fsSL https://raw.githubusercontent.com/fosrl/olm/refs/heads/main/get-olm.sh | bash
+#
+# Plus monorepo (mined deltas, 88plug releases):
+#   curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-olm.sh | sh
 
 set -e
 
@@ -11,7 +14,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# GitHub repository info
+# GitHub repository info (stock upstream; plus path: scripts/get-plus-olm.sh)
 REPO="fosrl/olm"
 GITHUB_API_URL="https://api.github.com/repos/${REPO}/releases/latest"
 

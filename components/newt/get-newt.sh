@@ -1,7 +1,10 @@
 #!/bin/sh
 
-# Get Newt - Cross-platform installation script
+# Get Newt - Cross-platform installation script (stock fosrl assets)
 # Usage: curl -fsSL https://raw.githubusercontent.com/fosrl/newt/refs/heads/main/get-newt.sh | sh
+#
+# Plus monorepo (mined deltas, 88plug releases):
+#   curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-newt.sh | sh
 
 set -e
 
@@ -11,7 +14,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# GitHub repository info
+# GitHub repository info (stock upstream; plus path: scripts/get-plus-newt.sh)
 REPO="fosrl/newt"
 GITHUB_API_URL="https://api.github.com/repos/${REPO}/releases/latest"
 

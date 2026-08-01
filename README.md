@@ -44,6 +44,32 @@
 
 ## Get started
 
+### User install (published plus artifacts)
+
+Product images and client binaries publish from GitHub Actions on tags `vX.Y.Z-plus` / `X.Y.Z-plus` → **GHCR** + **GitHub Releases**.
+
+```bash
+# Images (replace TAG, e.g. v1.21.1-plus or 1.21.1-plus)
+export TAG=v1.21.1-plus
+docker pull ghcr.io/88plug/pangolin-plus/pangolin:${TAG}
+docker pull ghcr.io/88plug/pangolin-plus/gerbil:${TAG}
+docker pull ghcr.io/88plug/pangolin-plus/newt:${TAG}
+docker pull ghcr.io/88plug/pangolin-plus/olm:${TAG}
+
+# Compose with published images
+export PANGOLIN_IMAGE=ghcr.io/88plug/pangolin-plus/pangolin:${TAG}
+export GERBIL_IMAGE=ghcr.io/88plug/pangolin-plus/gerbil:${TAG}
+export NEWT_IMAGE=ghcr.io/88plug/pangolin-plus/newt:${TAG}
+docker compose -f compose.plus.yaml up -d
+
+# Site client (newt) / user client (olm) from GitHub Releases
+curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-newt.sh | sh
+curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-olm.sh | sh
+# Pin: VERSION=v1.21.1-plus sh get-plus-newt.sh
+```
+
+Stock fosrl (no plus deltas): `get-newt.sh` / `get-olm.sh` from [fosrl/newt](https://github.com/fosrl/newt) / [fosrl/olm](https://github.com/fosrl/olm), or `REPO=fosrl/newt` with the plus scripts. Badger is Traefik **localPlugins** from `components/badger` (not a release binary).
+
 ### Develop / verify
 
 ```bash
@@ -54,17 +80,21 @@ npx tsc --noEmit && npm test
 # All plus Go clients/edge binaries
 make components-build    # newt + gerbil + olm → components/*/bin/
 make components-test
+make plus-guards-selftest
 ```
 
-### Full plus stack images
+### Full plus stack images (local build)
 
 Clients need **plus-built** images/binaries for mined deltas — stock `fosrl/*` does not carry them.
 
 ```bash
 # Local tags: pangolin-plus/{pangolin,gerbil,newt,olm}:local
 make plus-images
-# Optional push (your registry only):
-# make plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus PLUS_TAG=local
+# Optional push (your registry only; refuses fosrl/*):
+# make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus PLUS_TAG=local
+
+# Multi-OS release binaries → dist/plus/ (same assets CI uploads)
+# make plus-release-binaries VERSION=1.21.1-plus
 
 # Or compose (pangolin + gerbil + traefik v3.7 from this tree)
 docker compose -f compose.plus.yaml build
@@ -77,13 +107,13 @@ docker compose -f compose.plus.yaml up -d
 
 | Component | Role | How to run plus build |
 |-----------|------|------------------------|
-| pangolin | Controller | compose / `make plus-images` |
-| gerbil | WG edge on controller | compose / `make plus-images` |
-| newt | Site connector | site host binary or compose profile `lab` |
-| olm | End-user client | `make -C components/olm local` (not a compose service) |
+| pangolin | Controller | GHCR / compose / `make plus-images` |
+| gerbil | WG edge on controller | GHCR / compose / `make plus-images` |
+| newt | Site connector | `get-plus-newt.sh` / site host binary / profile `lab` |
+| olm | End-user client | `get-plus-olm.sh` / `make -C components/olm local` |
 | badger | Traefik plugin | **compose.plus** uses `traefik_config.plus.yml` + mounts `components/badger` as localPlugins; **compose.example** keeps catalog `traefik_config.yml`; **Ansible** copies monorepo (or stock clone) |
 
-**When you must use plus-built newt/olm/badger:** any mined client/plugin fix (reconnect, registration, prefer-local-routes, real-IP, etc.). Stock `fosrl/*` or pangolin.net apps will not include those deltas. Binary names stay `newt`/`olm`/`gerbil`; image tags are `pangolin-plus/*`.
+**When you must use plus-built newt/olm/badger:** any mined client/plugin fix (reconnect, registration, prefer-local-routes, real-IP, etc.). Stock `fosrl/*` or pangolin.net apps will not include those deltas. Binary names stay `newt`/`olm`/`gerbil`; published images are `ghcr.io/88plug/pangolin-plus/*`.
 
 ### Ansible VPS
 
@@ -91,6 +121,7 @@ docker compose -f compose.plus.yaml up -d
 cd deploy
 cp inventory.ini.example inventory.ini
 # configure domain / cert_mode / images (defaults: pangolin-plus/*:local, pull_images: false)
+# published: image_registry=ghcr.io/88plug/pangolin-plus image_tag=v1.21.1-plus pull_images=true
 ansible-playbook -i inventory.ini pangolin.yml
 ```
 
@@ -98,12 +129,25 @@ Upstream stock images (override **names** + pull):
 `pangolin_image=fosrl/pangolin:1.21.1` `gerbil_image=fosrl/gerbil:latest` `pull_images=true`.  
 Details: [deploy/README.md](deploy/README.md). Ops: [deploy/TROUBLESHOOTING.md](deploy/TROUBLESHOOTING.md).
 
+### Maintainer release
+
+```bash
+# After main is green (make plus-verify locally if you can):
+git tag v1.21.1-plus
+git push origin v1.21.1-plus
+# .github/workflows/plus-release.yml → GHCR multi-arch + GitHub Release binaries
+# Dry run: Actions → Plus Release → workflow_dispatch (dry_run=true)
+```
+
+Tag scheme: `vX.Y.Z-plus` or `X.Y.Z-plus` (RC: `vX.Y.Z-plus.rc.1` — no `:latest`). Upstream fosrl AWS pipeline is disabled: `cicd.fosrl-upstream.yml.disabled`.
+
 ### Product boundaries
 
 | Path | Ships |
 |------|--------|
+| GHCR + GitHub Releases (`plus-release.yml`) | **Published** plus images + newt/olm/gerbil binaries |
 | `compose.plus.yaml` + `make plus-images` / `components-build` | **Plus** monorepo images, binaries, monorepo badger localPlugins |
-| `deploy/*.yml` | **Plus** defaults (`pangolin-plus/*:local`) or fosrl override |
+| `deploy/*.yml` | **Plus** defaults (`pangolin-plus/*:local`) or GHCR / fosrl override |
 | `install/` (upstream-style installer) | **Stock** fosrl images + catalog badger — not plus-mined artifacts |
 
 ---
@@ -122,7 +166,7 @@ Details: [deploy/README.md](deploy/README.md). Ops: [deploy/TROUBLESHOOTING.md](
 
 Browser reverse proxy, Newt sites, private resources, IdP/RBAC, resource launcher — see [docs.pangolin.net](https://docs.pangolin.net) and upstream READMEs.
 
-**Plus clients:** build from this monorepo (`make components-build` → `components/newt/bin/newt`, `components/olm/bin/olm`). Stock pangolin.net / `get-newt.sh` downloads do **not** include mined reconnect/registration/real-IP deltas.
+**Plus clients:** [GitHub Releases](https://github.com/88plug/pangolin-plus/releases) / `scripts/get-plus-newt.sh` / `scripts/get-plus-olm.sh`, or build (`make components-build` / `make plus-release-binaries`). Stock pangolin.net / fosrl `get-newt.sh` downloads do **not** include mined reconnect/registration/real-IP deltas.
 
 Upstream stock clients (no plus deltas): [Mac](https://pangolin.net/downloads/mac) · [Windows](https://pangolin.net/downloads/windows) · [Linux](https://pangolin.net/downloads/linux) · [iOS](https://pangolin.net/downloads/ios) · [Android](https://pangolin.net/downloads/android).
 

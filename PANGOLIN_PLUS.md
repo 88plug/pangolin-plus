@@ -73,11 +73,13 @@ So pangolin-plus is:
 - remoteConfigURL path sanitize (bandwidth 400s) · Stop() stopOnce · olm WS re-register · badger real-IP header chain
 
 **Distribution**
+- **Published:** `ghcr.io/88plug/pangolin-plus/{pangolin,gerbil,newt,olm}` + GitHub Release binaries on tags `vX.Y.Z-plus` (workflow: `.github/workflows/plus-release.yml`)
 - `compose.plus.yaml` builds pangolin + gerbil; uses `traefik_config.plus.yml` + monorepo badger localPlugins (`compose.example` keeps stock catalog config); newt profile `lab` restart `"no"`
-- `make components-build` → newt + gerbil + olm binaries; `make plus-images` → `pangolin-plus/*:local`
-- Ansible `deploy/` defaults to plus local tags + monorepo badger localPlugins; fosrl fallback via image name overrides
+- `make components-build` → newt + gerbil + olm binaries; `make plus-images` → `pangolin-plus/*:local`; `make plus-release-binaries VERSION=…` → `dist/plus/`
+- Install scripts: `scripts/get-plus-newt.sh` / `scripts/get-plus-olm.sh` (stock: fosrl `get-*.sh` or `REPO=fosrl/newt`)
+- Ansible `deploy/` defaults to plus local tags + monorepo badger localPlugins; GHCR or fosrl via image overrides
 - Traefik pin: **v3.7** (compose + deploy + installer)
-- **Installer (`install/`) remains stock** fosrl images + catalog badger — use compose.plus / deploy for plus
+- **Installer (`install/`) remains stock** fosrl images + catalog badger — use compose.plus / deploy / GHCR for plus
 
 ---
 
@@ -85,14 +87,16 @@ So pangolin-plus is:
 
 | Artifact | Upstream (fosrl / pangolin.net) | pangolin-plus monorepo |
 |----------|----------------------------------|------------------------|
-| Server image | `fosrl/pangolin:1.21.1` | `make plus-images` → `pangolin-plus/pangolin:local` |
-| Gerbil image | `fosrl/gerbil:latest` | `pangolin-plus/gerbil:local` |
-| Newt | Docker Hub + `get-newt.sh` | `components/newt/bin/newt` or `pangolin-plus/newt:local` |
-| Olm | Docker Hub + desktop apps | `components/olm/bin/olm` (client binary, not compose) |
-| Badger | Traefik plugin catalog / git tag | `components/badger` as Traefik **localPlugins** (all deploy playbooks prefer monorepo) |
+| Server image | `fosrl/pangolin:1.21.1` | **`ghcr.io/88plug/pangolin-plus/pangolin:TAG`** or `make plus-images` → `pangolin-plus/pangolin:local` |
+| Gerbil image | `fosrl/gerbil:latest` | **`ghcr.io/88plug/pangolin-plus/gerbil:TAG`** / local |
+| Newt | Docker Hub + `get-newt.sh` | **GitHub Releases** / `get-plus-newt.sh` / `pangolin-plus/newt:local` |
+| Olm | Docker Hub + desktop apps | **GitHub Releases** / `get-plus-olm.sh` / local binary |
+| Badger | Traefik plugin catalog / git tag | `components/badger` as Traefik **localPlugins** (not a release binary) |
 
-**Full plus stack:** build images from this tree and run plus newt/olm on site/user hosts; deploy mounts monorepo badger.  
+**Full plus stack:** pull GHCR images (or build from this tree) and run plus newt/olm on site/user hosts; deploy mounts monorepo badger.  
 **Stock clients:** fine for smoke tests against a plus server, but **you will not get mined newt/olm/badger fixes** until those hosts run plus-built binaries / monorepo localPlugins.
+
+**Maintainer cut a release:** `git tag v1.21.1-plus && git push origin v1.21.1-plus` → plus-release workflow.
 
 **fosrl deploy fallback:** `pangolin_image=fosrl/pangolin:1.21.1` `gerbil_image=fosrl/gerbil:latest` `pull_images=true` (guard keys on image **names**, not `image_registry`).
 ---
