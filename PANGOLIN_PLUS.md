@@ -255,12 +255,16 @@ UPSTREAM RELEASES (latest == in-tree):
   fosrl/olm 1.8.1  ·  fosrl/badger v1.5.0
   (upstream HEAD matches release tags as of 2026-08-01)
 
-DEPENDENCY AUDIT (server npm — always latest minor/patch):
-  ✅ Applied: ncu --target minor (patch+minor)
-     next 16.2.12 · react/react-dom 19.2.8 · axios 1.19.0 · many radix/aws/query bumps
-  ⚠️  engines: node >=22 <26 (better-sqlite3 has no Node 26 prebuild)
-  🔴 Major NOT applied (judgment): better-sqlite3 13, typescript 7, ioredis 6,
-     zod-to-openapi 9, js-yaml 5, dotenvx 2, react-day-picker 10
+DEPENDENCY AUDIT (server npm — always latest minor/patch + majors where viable):
+  ✅ Patch/minor: next 16.2.12 · react/react-dom 19.2.8 · axios 1.19.0 · radix/aws/query …
+  ✅ Majors applied:
+     better-sqlite3 13.0.2 · ioredis 6.0.0 · js-yaml 5.2.2 (namespace imports)
+     @asteasolutions/zod-to-openapi 9.1.0 · @dotenvx/dotenvx 2.19.1
+     react-day-picker 10.0.1 (calendar ClassNames: table→month_grid)
+     @types/node 26.1.2
+  ⚠️  engines: node >=22 <26
+  🔴 Major held: typescript 7 — typescript-eslint@8 peer is typescript <6.1.0
+     (stay on typescript 6.0.3 until eslint stack supports TS 7)
 
 DEPENDENCY AUDIT (Go components):
   ✅ go get -u=patch + tidy on newt/gerbil/olm; builds green
