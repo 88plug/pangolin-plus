@@ -39,8 +39,8 @@
     #   pull_images: true
     #
     # Private registry example:
-    #   pangolin_image: ghcr.io/you/pangolin-plus/pangolin:1.21.1-plus
-    #   gerbil_image: ghcr.io/you/pangolin-plus/gerbil:1.21.1-plus
+    #   pangolin_image: ghcr.io/88plug/pangolin-plus/pangolin:v1.21.1-plus
+    #   gerbil_image: ghcr.io/88plug/pangolin-plus/gerbil:v1.21.1-plus
     #   pull_images: true
     image_registry: "pangolin-plus"
     image_tag: "local"

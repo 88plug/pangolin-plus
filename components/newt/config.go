@@ -259,7 +259,7 @@ func loadNewtConfig() newtpkg.Config {
 		AuthDaemonPrincipalsFile: "/var/run/auth-daemon/principals",
 		AuthDaemonCACertPath:     "/etc/ssh/ca.pem",
 		AdminAddr:                "127.0.0.1:2112",
-		// newt-plus: prefer local/LAN routes over tunnel routes on overlap
+		// pangolin-plus: prefer local/LAN routes over tunnel routes on overlap
 		// (closed PR #414 intent; uses network.PreferLocalRoutes / VPNRouteMetric)
 		PreferLocalRoutes: true,
 	}
@@ -438,7 +438,7 @@ func loadNewtConfig() newtpkg.Config {
 	flag.BoolVar(&cfg.UseNativeMainInterface, "native-main", cfg.UseNativeMainInterface, "Use native WireGuard interface for the main tunnel (instead of netstack)")
 	// making this the same as above should prevent them from running together
 	flag.StringVar(&cfg.NativeMainInterfaceName, "interface-main", cfg.NativeMainInterfaceName, "Name of the native main tunnel WireGuard interface (used with --native-main)")
-	flag.BoolVar(&cfg.PreferLocalRoutes, "prefer-local-routes", cfg.PreferLocalRoutes, "Prefer local/LAN routes over tunnel routes when destinations overlap (newt-plus default: true)")
+	flag.BoolVar(&cfg.PreferLocalRoutes, "prefer-local-routes", cfg.PreferLocalRoutes, "Prefer local/LAN routes over tunnel routes when destinations overlap (pangolin-plus default: true)")
 	flag.BoolVar(&cfg.DisableClients, "disable-clients", cfg.DisableClients, "Disable clients on the WireGuard interface")
 	flag.BoolVar(&cfg.DisableSSH, "disable-ssh", cfg.DisableSSH, "Disable SSH auth daemon and native SSH mode (remote auth daemon still works)")
 	flag.BoolVar(&cfg.EnforceHealthcheckCert, "enforce-hc-cert", cfg.EnforceHealthcheckCert, "Enforce certificate validation for health checks (default: false, accepts any cert)")

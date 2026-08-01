@@ -79,10 +79,11 @@ ARG IMAGE_DESCRIPTION="Identity-aware VPN and proxy for remote access to anythin
 
 # OCI Image Labels
 # https://github.com/opencontainers/image-spec/blob/main/annotations.md
-LABEL org.opencontainers.image.source="https://github.com/fosrl/pangolin" \
-      org.opencontainers.image.url="https://github.com/fosrl/pangolin" \
+# Product images (plus-release buildx labels override source/revision/version at publish).
+LABEL org.opencontainers.image.source="https://github.com/88plug/pangolin-plus" \
+      org.opencontainers.image.url="https://github.com/88plug/pangolin-plus" \
       org.opencontainers.image.documentation="https://docs.pangolin.net" \
-      org.opencontainers.image.vendor="Fossorial" \
+      org.opencontainers.image.vendor="88plug" \
       org.opencontainers.image.licenses="${LICENSE}" \
       org.opencontainers.image.title="${IMAGE_TITLE}" \
       org.opencontainers.image.description="${IMAGE_DESCRIPTION}" \

@@ -65,7 +65,7 @@ func runNewtMain(ctx context.Context) {
 
 	cfg := loadNewtConfig()
 
-	// newt-plus: apply route preference before any tunnel routes are installed
+	// pangolin-plus: apply route preference before any tunnel routes are installed
 	network.PreferLocalRoutes = cfg.PreferLocalRoutes
 	if cfg.PreferLocalRoutes {
 		logger.Debug("PreferLocalRoutes enabled: tunnel routes use high metric so LAN wins on overlap")

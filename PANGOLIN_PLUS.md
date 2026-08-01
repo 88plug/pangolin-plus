@@ -313,7 +313,7 @@ make components-test
 # Local Docker images: pangolin-plus/{pangolin,gerbil,newt,olm}:local
 make plus-images
 # Optional push (refuses fosrl / ghcr.io/fosrl namespaces):
-# make plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus PLUS_TAG=local
+# make plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus PLUS_TAG=local
 
 # Compose edge stack (traefik:v3.7)
 docker compose -f compose.plus.yaml up -d --build

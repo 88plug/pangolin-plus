@@ -51,7 +51,7 @@ Companion ports (newt/gerbil/olm/badger) go to the matching fosrl repo from the 
 | Branch | Meaning |
 |--------|---------|
 | `main` | Product default (what we ship) |
-| `claude/pangolin-plus` | Historical work name; may alias `main` during transition |
+| *(historical)* `claude/pangolin-plus` | Pre-productization branch name — product is **`main`** only |
 | `upstream-main` (optional) | Tracking tip of `upstream/main` for comparisons |
 
 ```bash

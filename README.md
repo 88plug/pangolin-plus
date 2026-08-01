@@ -83,7 +83,7 @@ All of this lives under **this tree** and is what `v1.21.1-plus` builds and publ
 | **olm** | 1.8.1 | Always re-register on WebSocket reconnect |
 | **badger** | v1.5.0 | Trusted-hop real client IP (CF → X-Real-IP → XFF) + tests |
 
-Proven in the published newt image: help text still says `newt-plus default: true` for prefer-local-routes; image labels point at this repo.
+Published newt images are built from `components/newt` (prefer-local-routes default on, reconnect pack, etc.).
 
 Deep table, provenance, and port-back guide: **[PANGOLIN_PLUS.md](PANGOLIN_PLUS.md)**.
 

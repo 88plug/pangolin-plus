@@ -30,7 +30,7 @@ type Config struct {
 	NoCloud                 bool
 	PreferEndpoint          string
 	// PreferLocalRoutes: when true, tunnel routes use a high metric so overlapping
-	// local/LAN routes win (newt-plus default). See network.PreferLocalRoutes.
+	// local/LAN routes win (pangolin-plus default). See network.PreferLocalRoutes.
 	// Addresses LAN-steal risk from closed PR #414 / local subnet overlap.
 	PreferLocalRoutes bool
 
