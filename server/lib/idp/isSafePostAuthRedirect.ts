@@ -1,11 +1,10 @@
 import config from "@server/lib/config";
+import {
+    hasBlockedScheme,
+    isSafeRelativeRedirectPath
+} from "@server/lib/idp/isSafeRedirectPath";
 
-const BLOCKED_SCHEMES = [
-    "javascript:",
-    "data:",
-    "vbscript:",
-    "file:"
-] as const;
+export { isSafeRelativeRedirectPath } from "@server/lib/idp/isSafeRedirectPath";
 
 function hostAllowed(host: string, allowed: string): boolean {
     return host === allowed || host.endsWith("." + allowed);
@@ -37,7 +36,6 @@ function collectAllowedHosts(): string[] {
         }
     }
 
-    // Optional app/server base_domain shapes without casting the whole config to any
     const appBase = (raw.app as { base_domain?: string } | undefined)
         ?.base_domain;
     const serverBase = (
@@ -61,13 +59,11 @@ export function isSafePostAuthRedirect(input: string): boolean {
     const trimmed = input.trim();
     if (!trimmed) return false;
 
-    const lower = trimmed.toLowerCase();
-    if (BLOCKED_SCHEMES.some((s) => lower.startsWith(s))) return false;
+    if (hasBlockedScheme(trimmed)) return false;
     if (trimmed.startsWith("//")) return false;
 
-    // Relative path — same host as the dashboard
     if (trimmed.startsWith("/")) {
-        return !trimmed.includes("\\") && !trimmed.includes("\0");
+        return isSafeRelativeRedirectPath(trimmed);
     }
 
     let url: URL;

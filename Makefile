@@ -532,7 +532,10 @@ newt-build:
 	$(MAKE) -C components/newt local
 
 components-test: newt-test
-	@echo "gerbil/olm/badger: baseline only (mine next); newt tests done"
+	$(MAKE) -C components/gerbil test 2>/dev/null || (cd components/gerbil && go test ./...)
+	$(MAKE) -C components/badger test 2>/dev/null || (cd components/badger && go test ./...)
+	$(MAKE) -C components/olm test 2>/dev/null || (cd components/olm && go test ./...)
+	@echo "components-test: newt + gerbil + badger + olm done"
 
 components-build: newt-build
 	@echo "Built components/newt → components/newt/bin/newt"

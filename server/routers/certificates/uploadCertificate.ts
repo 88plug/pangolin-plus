@@ -126,14 +126,23 @@ export async function uploadCertificate(
         });
         logger.info(`Custom certificate written to ${paths.domainDir}`);
 
+        // If dynamic cert config is configured, merge must succeed — otherwise
+        // PEMs sit on disk while Traefik never lists them.
         try {
-            mergeDynamicCertConfig(paths);
-            logger.info(
-                `Traefik dynamic cert config updated for ${domain.baseDomain}`
-            );
+            if (mergeDynamicCertConfig(paths)) {
+                logger.info(
+                    `Traefik dynamic cert config updated for ${domain.baseDomain}`
+                );
+            }
         } catch (configError) {
             logger.error(
                 `Failed to update Traefik dynamic config: ${configError}`
+            );
+            return next(
+                createHttpError(
+                    HttpCode.INTERNAL_SERVER_ERROR,
+                    "Certificate written but Traefik dynamic config update failed"
+                )
             );
         }
 

@@ -151,6 +151,20 @@ export async function updateSite(
             parsedBody.data.autoUpdateOverrideOrg = false; // force it off
         }
 
+        // Tunnel fields only apply to WireGuard sites (API must match UI)
+        if (
+            existingSite.type !== "wireguard" &&
+            (updateData.tunnelProfile !== undefined ||
+                updateData.routingMode !== undefined)
+        ) {
+            return next(
+                createHttpError(
+                    HttpCode.BAD_REQUEST,
+                    "tunnelProfile and routingMode are only valid for wireguard sites"
+                )
+            );
+        }
+
         // If tunnel profile set without routingMode, apply profile defaults
         if (updateData.tunnelProfile && updateData.routingMode === undefined) {
             updateData.routingMode = defaultsForTunnelProfile(
@@ -164,7 +178,8 @@ export async function updateSite(
             .where(eq(sites.siteId, siteId))
             .returning();
 
-        // Refresh Gerbil peer AllowedIPs when routing mode / profile changes
+        // Refresh Gerbil peer AllowedIPs when routing mode / profile changes.
+        // Fail the request if peer refresh fails — DB/Gerbil split is worse than 5xx.
         if (
             updatedSite[0] &&
             existingSite.type === "wireguard" &&
@@ -190,8 +205,14 @@ export async function updateSite(
                     `Updated WireGuard peer allowedIps for site ${siteId} (routingMode=${updatedSite[0].routingMode})`
                 );
             } catch (err) {
-                logger.warn(
+                logger.error(
                     `Failed to refresh Gerbil peer for site ${siteId}: ${err}`
+                );
+                return next(
+                    createHttpError(
+                        HttpCode.INTERNAL_SERVER_ERROR,
+                        "Site updated in database but Gerbil peer AllowedIPs refresh failed"
+                    )
                 );
             }
         }

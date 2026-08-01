@@ -106,24 +106,52 @@ export function readLocalCertStatus(baseDomain: string): LocalCertStatus {
     };
 }
 
+const MAX_PEM_BYTES = 256 * 1024;
+
+export function assertPemSize(pem: string, label: string): void {
+    if (Buffer.byteLength(pem, "utf8") > MAX_PEM_BYTES) {
+        throw new Error(`${label} exceeds ${MAX_PEM_BYTES} byte limit`);
+    }
+}
+
 export async function writeLocalCertPem(opts: {
     baseDomain: string;
     certPem: string;
     keyPem: string;
     wildcard?: boolean;
 }): Promise<LocalCertPaths> {
+    assertPemSize(opts.certPem, "certificate");
+    assertPemSize(opts.keyPem, "private key");
+
     const paths = pathsForDomain(opts.baseDomain);
+    // Contain domain dir under certificates_path (reject path traversal in baseDomain)
+    const root = path.resolve(getCertificatesRoot()!);
+    const domainDir = path.resolve(paths.domainDir);
+    if (domainDir !== root && !domainDir.startsWith(root + path.sep)) {
+        throw new Error("certificate path escapes certificates_path");
+    }
+
     await fs.mkdir(paths.domainDir, { recursive: true });
-    await fs.writeFile(paths.certPath, opts.certPem, { mode: 0o600 });
-    await fs.writeFile(paths.keyPath, opts.keyPem, { mode: 0o600 });
-    await fs.writeFile(paths.lastUpdatePath, new Date().toISOString(), {
-        mode: 0o644
-    });
+    // mode on writeFile only applies on create; chmod after so overwrites stay correct
+    await fs.writeFile(paths.certPath, opts.certPem);
+    await fs.writeFile(paths.keyPath, opts.keyPem);
+    await fs.chmod(paths.certPath, 0o644);
+    await fs.chmod(paths.keyPath, 0o600);
+    await fs.writeFile(paths.lastUpdatePath, new Date().toISOString());
+    await fs.chmod(paths.lastUpdatePath, 0o644);
 
     const isWildcard =
         opts.wildcard === true || opts.baseDomain.startsWith("*.");
     if (isWildcard) {
-        await fs.writeFile(paths.wildcardPath, "true", { mode: 0o644 });
+        await fs.writeFile(paths.wildcardPath, "true");
+        await fs.chmod(paths.wildcardPath, 0o644);
+    } else {
+        // Clear sticky wildcard from a prior upload
+        try {
+            await fs.unlink(paths.wildcardPath);
+        } catch {
+            // no prior marker
+        }
     }
     return paths;
 }
@@ -132,11 +160,14 @@ type DynamicCertConfig = {
     tls?: { certificates?: Array<{ certFile?: string; keyFile?: string }> };
 };
 
-/** Merge cert paths into Traefik dynamic cert config when configured. */
-export function mergeDynamicCertConfig(paths: LocalCertPaths): void {
+/**
+ * Merge cert paths into Traefik dynamic cert config when configured.
+ * @returns true if a dynamic config file was written, false if not configured.
+ */
+export function mergeDynamicCertConfig(paths: LocalCertPaths): boolean {
     const dynamicConfigPath =
         config.getRawConfig().traefik.dynamic_cert_config_path;
-    if (!dynamicConfigPath) return;
+    if (!dynamicConfigPath) return false;
 
     let dynamicConfig: DynamicCertConfig = { tls: { certificates: [] } };
     if (fsSync.existsSync(dynamicConfigPath)) {
@@ -168,4 +199,5 @@ export function mergeDynamicCertConfig(paths: LocalCertPaths): void {
         yaml.dump(dynamicConfig, { noRefs: true }),
         "utf8"
     );
+    return true;
 }

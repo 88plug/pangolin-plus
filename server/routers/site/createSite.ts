@@ -502,7 +502,7 @@ export async function createSite(
                     !req.userOrgRoleIds?.includes(adminRole[0].roleId)
                 ) {
                     // make sure the user can access the site
-                    trx.insert(userSites).values({
+                    await trx.insert(userSites).values({
                         userId: req.user?.userId!,
                         siteId: newSite.siteId
                     });

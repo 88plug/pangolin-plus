@@ -9,7 +9,10 @@ import createHttpError from "http-errors";
 import logger from "@server/logger";
 import { fromError } from "zod-validation-error";
 import { addPeer } from "../gerbil/peers";
-import { applyRoutingModeToAllowedIps } from "@server/lib/tunnels/tunnelProfiles";
+import {
+    applyRoutingModeToAllowedIps,
+    asRoutingMode
+} from "@server/lib/tunnels/tunnelProfiles";
 import { addTargets } from "../newt/targets";
 import {
     fireHealthCheckHealthyAlert,
@@ -362,8 +365,7 @@ export async function updateTarget(
                     : targetIps.flat();
                 const allowedIps = applyRoutingModeToAllowedIps(
                     base,
-                    (site as { routingMode?: "full-tunnel" | "selective" })
-                        .routingMode
+                    asRoutingMode(site.routingMode)
                 );
                 await addPeer(site.exitNodeId!, {
                     publicKey: site.pubKey,
