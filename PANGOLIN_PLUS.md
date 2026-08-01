@@ -73,8 +73,24 @@ So pangolin-plus is:
 - remoteConfigURL path sanitize (bandwidth 400s) · Stop() stopOnce · olm WS re-register · badger real-IP header chain
 
 **Distribution**
-- `compose.plus.yaml` builds pangolin + gerbil (and optional newt) from this monorepo
-- `make newt-test` / `make newt-build` from root
+- `compose.plus.yaml` builds pangolin + gerbil from this monorepo; newt via profile `lab`
+- `make components-build` → newt + gerbil + olm binaries; `make plus-images` → `pangolin-plus/*:local`
+- Ansible `deploy/` parameterized for plus images or fosrl fallback
+
+---
+
+## Who publishes what vs what plus builds
+
+| Artifact | Upstream (fosrl / pangolin.net) | pangolin-plus monorepo |
+|----------|----------------------------------|------------------------|
+| Server image | `fosrl/pangolin:1.21.1` | `make plus-images` → `pangolin-plus/pangolin:local` |
+| Gerbil image | `fosrl/gerbil:latest` | `pangolin-plus/gerbil:local` |
+| Newt | Docker Hub + `get-newt.sh` | `components/newt/bin/newt` or `pangolin-plus/newt:local` |
+| Olm | Docker Hub + desktop apps | `components/olm/bin/olm` (client binary, not compose) |
+| Badger | Traefik plugin / git tag | `components/badger` as localPlugins |
+
+**Full plus stack:** build images from this tree and run plus newt/olm on site/user hosts.  
+**Stock clients:** fine for smoke tests against a plus server, but **you will not get mined newt/olm fixes** until those hosts run plus-built binaries.
 
 ---
 
@@ -91,7 +107,8 @@ So pangolin-plus is:
 | WG tunnel profiles | – | ✓ |
 | Newt reconnect/health correctness pack | open PRs | ✓ mined |
 | Prefer local LAN over tunnel routes | flag off | ✓ default on |
-| Single compose build of plus images | – | ✓ `compose.plus.yaml` |
+| Single compose build of plus images | – | ✓ `compose.plus.yaml` + `make plus-images` |
+| Ansible image vars (plus or fosrl) | – | ✓ `deploy/` |
 
 ---
 
@@ -277,27 +294,31 @@ DEPENDENCY AUDIT (Go components):
 ## Build / verify
 
 ```bash
-# Server
+# Server (unchanged npm path)
 npm ci && npm run set:oss && npm run set:sqlite
 npx tsc --noEmit
 npm test
 
-# Newt (in monorepo)
-make newt-test
-make newt-build
+# Go components (binaries under components/*/bin/)
+make components-build
+make components-test
 
-# Full stack images
-docker compose -f compose.plus.yaml build
+# Local Docker images: pangolin-plus/{pangolin,gerbil,newt,olm}:local
+make plus-images
+# Optional: make plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus
+
+# Compose edge stack
+docker compose -f compose.plus.yaml up -d --build
+# Lab newt: NEWT_ID=... NEWT_SECRET=... docker compose -f compose.plus.yaml --profile lab up -d
 ```
 
 | Gate | Status |
 |------|--------|
 | Server `tsc` | PASS |
 | Server `npm test` | 9/11 (openapi isolation pre-existing) |
-| Newt `make test` | PASS |
-| Gerbil `go test ./...` | PASS |
-| Olm `go test ./...` | PASS |
-| Badger `go test ./...` | PASS (new IP unit tests) |
+| `make components-build` | newt + gerbil + olm binaries |
+| `make components-test` | PASS |
+| `make plus-images` | local Docker tags (optional if no Docker) |
 
 ---
 

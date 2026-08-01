@@ -28,6 +28,34 @@
     pangolin_dir: "/opt/pangolin"
 
     # =========================================
+    # IMAGES — plus-built (default) or upstream stock
+    # =========================================
+    # Default: images from this monorepo (`make plus-images` on the host, or
+    # push to your registry and retag). Image names match compose.plus.yaml.
+    #
+    # Upstream fosrl fallback (no plus client/server deltas):
+    #   pangolin_image: fosrl/pangolin:1.21.1
+    #   gerbil_image: fosrl/gerbil:latest
+    #   pull_images: true
+    #
+    # Private registry example:
+    #   pangolin_image: ghcr.io/you/pangolin-plus/pangolin:1.21.1-plus
+    #   gerbil_image: ghcr.io/you/pangolin-plus/gerbil:1.21.1-plus
+    #   pull_images: true
+    image_registry: "pangolin-plus"
+    image_tag: "local"
+    pangolin_image: "{{ image_registry }}/pangolin:{{ image_tag }}"
+    gerbil_image: "{{ image_registry }}/gerbil:{{ image_tag }}"
+    # Set true when images live on a registry (fosrl/* or your GHCR).
+    # Leave false for :local tags already loaded on the VPS.
+    pull_images: false
+    #
+    # Site / user clients are NOT deploy services:
+    #   newt (site host): make -C components/newt local  → bin/newt
+    #   olm  (user host): make -C components/olm local   → bin/olm
+    #   badger: Traefik localPlugins (see Pre-download Badger task)
+
+    # =========================================
     # CERTIFICATE MODE - Choose one:
     #   "letsencrypt" - Auto-renewing certs (default, DNS must point to VPS)
     #   "cloudflare"  - 15-year Origin cert (requires cert.pem + key.pem files)
@@ -196,7 +224,7 @@
         content: |
           services:
             pangolin:
-              image: fosrl/pangolin:1.21.1
+              image: {{ pangolin_image }}
               container_name: pangolin
               restart: unless-stopped
               networks:
@@ -210,7 +238,7 @@
                 retries: 5
 
             gerbil:
-              image: fosrl/gerbil:latest
+              image: {{ gerbil_image }}
               container_name: gerbil
               restart: unless-stopped
               networks:
@@ -519,6 +547,7 @@
       notify: restart pangolin
 
     - name: Pull Pangolin images
+      when: pull_images | bool
       shell: cd {{ pangolin_dir }} && docker compose pull
 
     - name: Start Pangolin

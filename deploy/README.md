@@ -1,8 +1,7 @@
 # Pangolin-plus deploy (Ansible)
 
-Deploy **fosrl/pangolin 1.21.1** (or the pangolin-plus image you build) to a VPS with optional Cloudflare Origin Certificates.
-
-Bundled from prior `racknerd-pangolin` public playbooks + simple single-file playbooks. No secrets included.
+Deploy the **pangolin-plus controller edge** (pangolin + gerbil + traefik) to a VPS.
+Optional Cloudflare Origin Certificates. No secrets in-repo.
 
 ## Features
 
@@ -10,6 +9,7 @@ Bundled from prior `racknerd-pangolin` public playbooks + simple single-file pla
 - Badger auth middleware (pre-downloaded locally)
 - Rate limiting and optional MaxMind geoblocking
 - Safe upgrades with backup/rollback (`upgrade-pangolin.yml`)
+- Parameterized images: plus-built **or** upstream fosrl fallback
 - Ops notes: Traefik cookie domain fix, ODoH-through-WireGuard DNS research
 
 ## Quick start
@@ -24,6 +24,7 @@ Bundled from prior `racknerd-pangolin` public playbooks + simple single-file pla
    - `base_domain`, `admin_email`
    - `cert_mode: "letsencrypt"` or `"cloudflare"`
    - For cloudflare: place `cert.pem` + `key.pem` next to the playbook
+   - Images (see below)
 
 3. Deploy:
    ```bash
@@ -32,14 +33,52 @@ Bundled from prior `racknerd-pangolin` public playbooks + simple single-file pla
 
 4. Open `https://yourdomain.com/auth/initial-setup`
 
-## Image pin
+## Images
 
-Playbooks default to `fosrl/pangolin:1.21.1`. After you build pangolin-plus, retag:
+Playbooks default to **plus local tags** (same as `compose.plus.yaml` / `make plus-images`):
+
+| Var | Default |
+|-----|---------|
+| `image_registry` | `pangolin-plus` |
+| `image_tag` | `local` |
+| `pangolin_image` | `{{ image_registry }}/pangolin:{{ image_tag }}` |
+| `gerbil_image` | `{{ image_registry }}/gerbil:{{ image_tag }}` |
+| `pull_images` | `false` (set `true` for registry pulls) |
+
+### Plus-built (recommended for mined fixes)
 
 ```bash
-docker build -t yourregistry/pangolin-plus:1.21.1 --build-arg BUILD=oss .
-# then set image: yourregistry/pangolin-plus:1.21.1 in the compose task
+# On a machine with this monorepo + Docker:
+make plus-images
+# Load/transfer images to the VPS, then run the playbook with defaults.
+# Or push:
+make plus-images plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus PLUS_TAG=1.21.1-plus
 ```
+
+```yaml
+# pangolin.yml (or -e)
+image_registry: ghcr.io/you/pangolin-plus
+image_tag: 1.21.1-plus
+pull_images: true
+```
+
+### Upstream stock fallback
+
+```yaml
+pangolin_image: fosrl/pangolin:1.21.1
+gerbil_image: fosrl/gerbil:latest
+pull_images: true
+```
+
+### What is *not* a deploy service
+
+| Component | Where it runs | Plus build |
+|-----------|---------------|------------|
+| **newt** | Each **site** host | `make -C components/newt local` → `bin/newt` |
+| **olm** | End-user devices | `make -C components/olm local` → `bin/olm` |
+| **badger** | Traefik localPlugins | Pre-cloned in playbook; or `components/badger` from monorepo |
+
+You only get plus newt/olm fixes when those hosts run binaries built from this tree.
 
 ## PEM upload in the dashboard
 

@@ -47,32 +47,51 @@
 ### Develop / verify
 
 ```bash
-# Server
+# Server (npm path unchanged)
 npm ci && npm run set:oss && npm run set:sqlite
 npx tsc --noEmit && npm test
 
-# Newt (in monorepo)
-make newt-test && make newt-build
-# → components/newt/bin/newt
+# All plus Go clients/edge binaries
+make components-build    # newt + gerbil + olm → components/*/bin/
+make components-test
 ```
 
-### Compose (build from this tree)
+### Full plus stack images
 
 ```bash
+# Local tags: pangolin-plus/{pangolin,gerbil,newt,olm}:local
+make plus-images
+
+# Or compose (pangolin + gerbil + traefik from this tree)
 docker compose -f compose.plus.yaml build
 docker compose -f compose.plus.yaml up -d
+
+# Optional lab newt against the controller:
+# export NEWT_ID=... NEWT_SECRET=...
+# docker compose -f compose.plus.yaml --profile lab up -d
 ```
+
+| Component | Role | How to run plus build |
+|-----------|------|------------------------|
+| pangolin | Controller | compose / `make plus-images` |
+| gerbil | WG edge on controller | compose / `make plus-images` |
+| newt | Site connector | site host binary or compose profile `lab` |
+| olm | End-user client | `make -C components/olm local` (not a compose service) |
+| badger | Traefik plugin | localPlugins, not a long-running image |
+
+**When you must use plus-built newt/olm:** any mined client fix (reconnect, registration, prefer-local-routes, etc.). Stock `fosrl/*` or pangolin.net apps will not include those deltas.
 
 ### Ansible VPS
 
 ```bash
 cd deploy
 cp inventory.ini.example inventory.ini
-# configure domain / cert_mode
+# configure domain / cert_mode / images (defaults: pangolin-plus/*:local)
 ansible-playbook -i inventory.ini pangolin.yml
 ```
 
-Ops notes: [deploy/TROUBLESHOOTING.md](deploy/TROUBLESHOOTING.md).
+Upstream stock images: set `pangolin_image=fosrl/pangolin:1.21.1`, `gerbil_image=fosrl/gerbil:latest`, `pull_images=true`.  
+Details: [deploy/README.md](deploy/README.md). Ops: [deploy/TROUBLESHOOTING.md](deploy/TROUBLESHOOTING.md).
 
 ---
 

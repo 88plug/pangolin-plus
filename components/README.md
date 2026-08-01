@@ -14,14 +14,43 @@ repos (and any useful fork PRs), apply plus deltas here, and build one distribut
 
 Nested `.git` dirs are removed so history is the single product `main` branch on [88plug/pangolin-plus](https://github.com/88plug/pangolin-plus).
 
-### Build
+### Who publishes what
+
+| Piece | Upstream ships | Plus builds |
+|-------|----------------|-------------|
+| Pangolin server images | `fosrl/pangolin:*` (GHCR/Docker Hub) | `make plus-images` → `pangolin-plus/pangolin:local` |
+| Gerbil images | `fosrl/gerbil:*` | `pangolin-plus/gerbil:local` |
+| Newt images/binaries | `fosrl/newt` + install scripts | `components/newt/bin/newt` or `pangolin-plus/newt:local` |
+| Olm images/binaries | `fosrl/olm` + desktop apps on pangolin.net | `components/olm/bin/olm` or `pangolin-plus/olm:local` |
+| Badger | Traefik plugin catalog / git tag | `components/badger` as **localPlugins** (not a long-running image) |
+
+Stock clients work against a plus **server**, but you **must** run plus-built newt/olm to get the mined client fixes in the table above.
+
+### Build (from repo root)
 
 ```bash
-# From repo root
-make -C components/newt local test
-make -C components/gerbil local    # if Makefile exists
-# or use compose.plus.yaml build contexts
+# Go binaries → components/*/bin/
+make components-build
+make components-test
+
+# Local Docker images (pangolin-plus/*:local)
+make plus-images
+# Optional registry push (explicit registry required):
+# make plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus PLUS_TAG=local
+
+# Or compose contexts:
+docker compose -f compose.plus.yaml build
+docker compose -f compose.plus.yaml up -d
+# Lab site connector:
+# NEWT_ID=... NEWT_SECRET=... docker compose -f compose.plus.yaml --profile lab up -d
 ```
+
+| Target | Output |
+|--------|--------|
+| `make components-build` | `newt`, `gerbil`, `olm` binaries under `components/*/bin/` |
+| `make plus-images` | Docker tags `pangolin-plus/{pangolin,gerbil,newt,olm}:local` |
+| `make -C components/olm local` | User client only (not a compose service) |
+| badger | Plugin source only — wire Traefik `localPlugins` |
 
 ### Provenance of newt deltas
 

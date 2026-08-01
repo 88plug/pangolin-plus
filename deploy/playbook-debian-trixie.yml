@@ -15,6 +15,14 @@
   vars:
     pangolin_dir: "/home/{{ ansible_user }}/pangolin"
     pangolin_host: "{{ pangolin_dashboard_url | regex_replace('^https://', '') }}"
+    # Images: plus local (default) or upstream stock.
+    # Upstream: -e pangolin_image=fosrl/pangolin:1.21.1 -e gerbil_image=fosrl/gerbil:latest -e pull_images=true
+    # Clients: newt/olm on site/user hosts — make -C components/{newt,olm} local
+    image_registry: "pangolin-plus"
+    image_tag: "local"
+    pangolin_image: "{{ image_registry }}/pangolin:{{ image_tag }}"
+    gerbil_image: "{{ image_registry }}/gerbil:{{ image_tag }}"
+    pull_images: false
 
   tasks:
     # === Validation ===
@@ -147,7 +155,7 @@
         content: |
           services:
             pangolin:
-              image: fosrl/pangolin:1.21.1
+              image: {{ pangolin_image }}
               container_name: pangolin
               restart: unless-stopped
               volumes:
@@ -159,7 +167,7 @@
                 retries: 15
 
             gerbil:
-              image: fosrl/gerbil:latest
+              image: {{ gerbil_image }}
               container_name: gerbil
               restart: unless-stopped
               depends_on:
@@ -309,17 +317,18 @@
 
     # === Container Management ===
     - name: Pull images
+      when: pull_images | bool
       command: docker-compose pull
       args:
         chdir: "{{ pangolin_dir }}"
       register: pull
-      changed_when: "'Pull complete' in pull.stderr or 'Downloaded' in pull.stderr"
+      changed_when: pull is not skipped and ('Pull complete' in pull.stderr or 'Downloaded' in pull.stderr)
 
     - name: Recreate containers (config changed)
       command: docker-compose up -d --force-recreate
       args:
         chdir: "{{ pangolin_dir }}"
-      when: compose_cfg.changed or app_cfg.changed or traefik_cfg.changed or dynamic_cfg.changed or pull.changed
+      when: compose_cfg.changed or app_cfg.changed or traefik_cfg.changed or dynamic_cfg.changed or (pull is not skipped and pull.changed)
 
     - name: Ensure containers running
       command: docker-compose up -d

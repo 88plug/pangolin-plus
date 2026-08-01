@@ -1,11 +1,22 @@
-# pangolin-plus full stack — builds server + ecosystem components from this monorepo.
-# Usage:
+# pangolin-plus full stack — builds server + edge components from this monorepo.
+#
+# Default (controller edge):
 #   docker compose -f compose.plus.yaml build
 #   docker compose -f compose.plus.yaml up -d
 #
-# Newt still runs on each *site* host (not always on the controller). Gerbil +
-# pangolin + traefik are the control-plane edge. Olm is the end-user client binary
-# (not a compose service here).
+# Lab site connector (plus newt against this controller):
+#   export NEWT_ID=... NEWT_SECRET=...
+#   docker compose -f compose.plus.yaml --profile lab up -d
+#
+# Image tags match `make plus-images` → pangolin-plus/{pangolin,gerbil,newt,olm}:local
+#
+# Roles:
+#   pangolin + gerbil + traefik  — control-plane edge (compose services)
+#   newt                         — site connector (profile `lab` here, or install binary
+#                                  on each site host: make -C components/newt local)
+#   olm                          — end-user client binary only (not a compose service):
+#                                  make -C components/olm local  → components/olm/bin/olm
+#   badger                       — Traefik plugin (localPlugins), not a long-running image
 
 name: pangolin-plus
 
@@ -67,21 +78,32 @@ services:
       - ./config/traefik:/etc/traefik:ro
       - ./config/letsencrypt:/letsencrypt
 
-  # Optional: run a local Newt against this controller (site connector).
-  # Uncomment and set NEWT_ID / NEWT_SECRET for a lab site.
-  # newt:
-  #   build:
-  #     context: ./components/newt
-  #     dockerfile: Dockerfile
-  #   image: pangolin-plus/newt:local
-  #   environment:
-  #     PANGOLIN_ENDPOINT: http://pangolin:3001
-  #     NEWT_ID: ${NEWT_ID}
-  #     NEWT_SECRET: ${NEWT_SECRET}
-  #     NEWT_PREFER_LOCAL_ROUTES: "true"
-  #   cap_add:
-  #     - NET_ADMIN
-  #   network_mode: host
+  # Optional lab site connector built from this monorepo (plus newt deltas).
+  # Requires NEWT_ID + NEWT_SECRET from the dashboard (Sites → Newt credentials).
+  #   export NEWT_ID=... NEWT_SECRET=...
+  #   docker compose -f compose.plus.yaml --profile lab up -d
+  # Production: install the binary on each site host instead of this service:
+  #   make -C components/newt local  → components/newt/bin/newt
+  newt:
+    profiles: ["lab"]
+    build:
+      context: ./components/newt
+      dockerfile: Dockerfile
+    image: pangolin-plus/newt:local
+    container_name: newt-lab
+    restart: unless-stopped
+    depends_on:
+      pangolin:
+        condition: service_healthy
+    environment:
+      # Bridge DNS reaches the controller; set public URL when newt runs off-host.
+      PANGOLIN_ENDPOINT: ${PANGOLIN_ENDPOINT:-http://pangolin:3001}
+      NEWT_ID: ${NEWT_ID:-}
+      NEWT_SECRET: ${NEWT_SECRET:-}
+      NEWT_PREFER_LOCAL_ROUTES: ${NEWT_PREFER_LOCAL_ROUTES:-true}
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
 
 networks:
   default:

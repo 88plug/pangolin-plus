@@ -523,19 +523,113 @@ clean:
 	docker rmi pangolin
 
 # --- pangolin-plus monorepo components ---
-.PHONY: components-test components-build newt-test newt-build
+#
+# Binaries (go build → bin/):  make components-build
+# Local Docker images:         make plus-images
+# Optional registry push:      make plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus
+#
+# badger is a Traefik plugin (Go module), not a long-running image:
+#   copy components/badger into Traefik localPlugins, or build with traefik yaegi.
+# olm is an end-user client binary (not a controller compose service).
+
+PLUS_REGISTRY ?= pangolin-plus
+PLUS_TAG ?= local
+# Optional versioned tag: make plus-images VERSION=1.21.1-plus
+VERSION ?=
+
+.PHONY: components-test components-build \
+	newt-test newt-build gerbil-build olm-build badger-test \
+	plus-images plus-images-push plus-image-pangolin plus-image-gerbil \
+	plus-image-newt plus-image-olm
 
 newt-test:
 	$(MAKE) -C components/newt test
 
 newt-build:
 	$(MAKE) -C components/newt local
+	@echo "→ components/newt/bin/newt"
 
-components-test: newt-test
-	$(MAKE) -C components/gerbil test 2>/dev/null || (cd components/gerbil && go test ./...)
-	$(MAKE) -C components/badger test 2>/dev/null || (cd components/badger && go test ./...)
-	$(MAKE) -C components/olm test 2>/dev/null || (cd components/olm && go test ./...)
+gerbil-build:
+	@mkdir -p components/gerbil/bin
+	cd components/gerbil && CGO_ENABLED=0 go build -o bin/gerbil .
+	@echo "→ components/gerbil/bin/gerbil"
+
+olm-build:
+	$(MAKE) -C components/olm local
+	@echo "→ components/olm/bin/olm"
+
+badger-test:
+	cd components/badger && go test ./...
+
+# Local binaries for newt (site), gerbil (edge), olm (user client).
+# badger: plugin only — no binary target here (see badger-test).
+components-build: newt-build gerbil-build olm-build
+	@echo ""
+	@echo "components-build done:"
+	@echo "  components/newt/bin/newt"
+	@echo "  components/gerbil/bin/gerbil"
+	@echo "  components/olm/bin/olm"
+	@echo "  badger: Traefik plugin (components/badger) — not a long-running binary"
+
+components-test: newt-test badger-test
+	cd components/gerbil && go test ./...
+	cd components/olm && go test ./...
 	@echo "components-test: newt + gerbil + badger + olm done"
 
-components-build: newt-build
-	@echo "Built components/newt → components/newt/bin/newt"
+# --- plus Docker images (local load; no multi-arch push) ---
+# Tags: $(PLUS_REGISTRY)/{pangolin,gerbil,newt,olm}:$(PLUS_TAG)
+# Defaults: pangolin-plus/*:local  (matches compose.plus.yaml)
+
+plus-image-pangolin:
+	docker build \
+		--build-arg BUILD=oss \
+		--build-arg DATABASE=sqlite \
+		-t $(PLUS_REGISTRY)/pangolin:$(PLUS_TAG) \
+		$(if $(VERSION),-t $(PLUS_REGISTRY)/pangolin:$(VERSION),) \
+		-f Dockerfile .
+
+plus-image-gerbil:
+	docker build \
+		-t $(PLUS_REGISTRY)/gerbil:$(PLUS_TAG) \
+		$(if $(VERSION),-t $(PLUS_REGISTRY)/gerbil:$(VERSION),) \
+		-f components/gerbil/Dockerfile components/gerbil
+
+plus-image-newt:
+	docker build \
+		-t $(PLUS_REGISTRY)/newt:$(PLUS_TAG) \
+		$(if $(VERSION),-t $(PLUS_REGISTRY)/newt:$(VERSION),) \
+		-f components/newt/Dockerfile components/newt
+
+plus-image-olm:
+	docker build \
+		-t $(PLUS_REGISTRY)/olm:$(PLUS_TAG) \
+		$(if $(VERSION),-t $(PLUS_REGISTRY)/olm:$(VERSION),) \
+		-f components/olm/Dockerfile components/olm
+
+plus-images: plus-image-pangolin plus-image-gerbil plus-image-newt plus-image-olm
+	@echo ""
+	@echo "plus-images tagged under $(PLUS_REGISTRY)/*:$(PLUS_TAG)"
+	@echo "  (badger is a Traefik plugin — use components/badger as localPlugins source)"
+	@echo "Compose: docker compose -f compose.plus.yaml up -d"
+	@echo "Lab newt:  docker compose -f compose.plus.yaml --profile lab up -d"
+
+# Optional: push to a registry you control. Does NOT default to GHCR.
+# Example:
+#   make plus-images plus-images-push PLUS_REGISTRY=ghcr.io/88plug/pangolin-plus PLUS_TAG=local
+plus-images-push:
+	@if [ "$(PLUS_REGISTRY)" = "pangolin-plus" ]; then \
+		echo "Error: set PLUS_REGISTRY to a real registry (e.g. ghcr.io/you/pangolin-plus)"; \
+		echo "  make plus-images-push PLUS_REGISTRY=ghcr.io/you/pangolin-plus PLUS_TAG=local"; \
+		exit 1; \
+	fi
+	docker push $(PLUS_REGISTRY)/pangolin:$(PLUS_TAG)
+	docker push $(PLUS_REGISTRY)/gerbil:$(PLUS_TAG)
+	docker push $(PLUS_REGISTRY)/newt:$(PLUS_TAG)
+	docker push $(PLUS_REGISTRY)/olm:$(PLUS_TAG)
+	@if [ -n "$(VERSION)" ]; then \
+		docker push $(PLUS_REGISTRY)/pangolin:$(VERSION); \
+		docker push $(PLUS_REGISTRY)/gerbil:$(VERSION); \
+		docker push $(PLUS_REGISTRY)/newt:$(VERSION); \
+		docker push $(PLUS_REGISTRY)/olm:$(VERSION); \
+	fi
+	@echo "plus-images-push: pushed $(PLUS_REGISTRY)/*:$(PLUS_TAG)"
