@@ -1,13 +1,13 @@
 {
-    "name": "@fosrl/pangolin",
+    "name": "@88plug/pangolin-plus",
     "version": "0.0.0",
     "private": true,
     "type": "module",
-    "description": "Identity-aware VPN and proxy for remote access to anything, anywhere and Dashboard UI",
-    "homepage": "https://github.com/fosrl/pangolin",
+    "description": "Identity-aware VPN and proxy for remote access to anything, anywhere and Dashboard UI (88plug/pangolin-plus community monorepo)",
+    "homepage": "https://github.com/88plug/pangolin-plus",
     "repository": {
         "type": "git",
-        "url": "https://github.com/fosrl/pangolin"
+        "url": "https://github.com/88plug/pangolin-plus"
     },
     "license": "SEE LICENSE IN LICENSE AND README.md",
     "scripts": {

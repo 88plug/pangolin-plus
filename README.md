@@ -1,6 +1,6 @@
-> **pangolin-plus** — one monorepo, one product: the community **plus** of the **full Pangolin self-host stack**. We **mine** [fosrl/pangolin](https://github.com/fosrl/pangolin), [newt](https://github.com/fosrl/newt), [gerbil](https://github.com/fosrl/gerbil), [olm](https://github.com/fosrl/olm), and [badger](https://github.com/fosrl/badger) (issue/PR graveyards included) into **this tree** — not into separate `*-plus` repos.
+> **[88plug/pangolin-plus](https://github.com/88plug/pangolin-plus)** — one monorepo, one product: the community **plus** of the **full Pangolin self-host stack**. We **mine** [fosrl/pangolin](https://github.com/fosrl/pangolin), [newt](https://github.com/fosrl/newt), [gerbil](https://github.com/fosrl/gerbil), [olm](https://github.com/fosrl/olm), and [badger](https://github.com/fosrl/badger) (issue/PR graveyards included) into **this tree** — not into separate `*-plus` repos.
 >
-> **Why & how we differ, matrices, port guide → [PANGOLIN_PLUS.md](PANGOLIN_PLUS.md).** Branch: `claude/pangolin-plus`.
+> **Why & how we differ, matrices, port guide → [PANGOLIN_PLUS.md](PANGOLIN_PLUS.md).** Default branch: **`main`** on this product repo. Upstream fosrl is tracked as git remote **`upstream`** only (no PR conflict with fosrl).
 
 <div align="center">
     <h2>
@@ -18,11 +18,13 @@
   <h5>
       <a href="PANGOLIN_PLUS.md">Plus differences</a>
       <span> | </span>
+      <a href="UPSTREAM.md">Upstream sync / port</a>
+      <span> | </span>
       <a href="components/README.md">Components</a>
       <span> | </span>
       <a href="https://docs.pangolin.net/">Upstream docs</a>
       <span> | </span>
-      <a href="https://github.com/fosrl/pangolin">Upstream server</a>
+      <a href="https://github.com/fosrl/pangolin">fosrl/pangolin</a>
   </h5>
 </div>
 

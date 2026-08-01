@@ -3,7 +3,7 @@
 A community **plus fork** of the **Pangolin self-host stack** — not just the dashboard server.
 One monorepo product that **mines** [fosrl/pangolin](https://github.com/fosrl/pangolin), [newt](https://github.com/fosrl/newt), [gerbil](https://github.com/fosrl/gerbil), [olm](https://github.com/fosrl/olm), and [badger](https://github.com/fosrl/badger) (and useful fork PRs), then ships **one** distribution.
 
-> **The bar for every change:** one a thoughtful upstream maintainer would accept — small, focused, tested, verified before it ships. Branch **`claude/pangolin-plus`**. Nothing here is a throwaway hack. We do **not** publish separate `newt-plus` / `olm-plus` products.
+> **The bar for every change:** one a thoughtful upstream maintainer would accept — small, focused, tested, verified before it ships. Product home: **[88plug/pangolin-plus](https://github.com/88plug/pangolin-plus)** (`main`). Upstream [fosrl/pangolin](https://github.com/fosrl/pangolin) is remote **`upstream`** for sync/port only. Nothing here is a throwaway hack. We do **not** publish separate `newt-plus` / `olm-plus` products.
 
 **Layout**
 
