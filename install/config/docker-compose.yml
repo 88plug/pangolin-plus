@@ -1,7 +1,8 @@
 name: pangolin
 services:
   pangolin:
-    image: docker.io/fosrl/pangolin:{{if .IsEnterprise}}ee-{{end}}{{if .IsPostgreSQL}}postgresql-{{end}}{{.PangolinVersion}}
+    # pangolin-plus product images (GHCR). Stock fosrl: docker.io/fosrl/pangolin:…
+    image: ghcr.io/88plug/pangolin-plus/pangolin:{{.PangolinVersion}}
     container_name: pangolin
     restart: unless-stopped
     deploy:
@@ -27,7 +28,7 @@ services:
       retries: 15
 
   {{if .InstallGerbil}}gerbil:
-    image: docker.io/fosrl/gerbil:{{.GerbilVersion}}
+    image: ghcr.io/88plug/pangolin-plus/gerbil:{{.GerbilVersion}}
     container_name: gerbil
     restart: unless-stopped
     depends_on:

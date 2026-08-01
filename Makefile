@@ -847,11 +847,13 @@ plus-verify: plus-guards-selftest components-build components-test
 #   make plus-release-binaries VERSION=1.21.1-plus
 #   ls dist/plus/
 #
-# Exact expected basenames (newt×10 + olm×8 + gerbil×2 = 20; + SHA256SUMS).
-# Keep in sync with components/*/Makefile go-build-release targets.
+# Exact expected basenames (newt×10 + olm×8 + gerbil×2 + installer×2 = 22; + SHA256SUMS).
+# Keep in sync with components/*/Makefile + install/Makefile go-build-release targets.
 PLUS_RELEASE_EXPECTED_ASSETS := \
 	gerbil_linux_amd64 \
 	gerbil_linux_arm64 \
+	installer_linux_amd64 \
+	installer_linux_arm64 \
 	newt_darwin_amd64 \
 	newt_darwin_arm64 \
 	newt_freebsd_amd64 \
@@ -920,6 +922,10 @@ plus-release-binaries:
 	$(MAKE) -C components/olm go-build-release VERSION="$(VERSION)"
 	@echo "Building gerbil release binaries (linux amd64/arm64)..."
 	$(MAKE) -C components/gerbil go-build-release
+	@echo "Building installer (embeds GHCR plus image tags v$(VERSION))..."
+	$(MAKE) -C install go-build-release \
+		PANGOLIN_VERSION="v$(VERSION)" \
+		GERBIL_VERSION="v$(VERSION)"
 	@# Stage with stable asset names (underscores — matches get-plus-*.sh / upstream get-*.sh)
 	@set -e; \
 	for f in components/newt/bin/newt_*; do \
@@ -934,6 +940,7 @@ plus-release-binaries:
 		[ -f "$$f" ] || continue; \
 		cp -f "$$f" "$(PLUS_DIST)/$$(basename "$$f")"; \
 	done; \
+	cp -f install/bin/installer_linux_amd64 install/bin/installer_linux_arm64 "$(PLUS_DIST)/"; \
 	missing=0; \
 	for name in $(PLUS_RELEASE_EXPECTED_ASSETS); do \
 		if [ ! -f "$(PLUS_DIST)/$$name" ]; then \
@@ -966,6 +973,8 @@ plus-release-binaries:
 	test -x "$(PLUS_DIST)/newt_linux_amd64" || { echo "Error: missing newt_linux_amd64"; exit 1; }; \
 	test -x "$(PLUS_DIST)/olm_linux_amd64" || { echo "Error: missing olm_linux_amd64"; exit 1; }; \
 	test -x "$(PLUS_DIST)/gerbil_linux_amd64" || { echo "Error: missing gerbil_linux_amd64"; exit 1; }; \
+	test -x "$(PLUS_DIST)/installer_linux_amd64" || { echo "Error: missing installer_linux_amd64"; exit 1; }; \
+	test -x "$(PLUS_DIST)/installer_linux_arm64" || { echo "Error: missing installer_linux_arm64"; exit 1; }; \
 	newt_ver=$$("$(PLUS_DIST)/newt_linux_amd64" --version 2>/dev/null || true); \
 	olm_ver=$$("$(PLUS_DIST)/olm_linux_amd64" --version 2>/dev/null || true); \
 	echo "smoke newt --version: $$newt_ver"; \

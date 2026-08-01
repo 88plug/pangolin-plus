@@ -1,180 +1,121 @@
 #!/bin/bash
-
-# Get installer - Cross-platform installation script
-# Usage: curl -fsSL https://raw.githubusercontent.com/fosrl/installer/refs/heads/main/get-installer.sh | bash
+# Get pangolin-plus installer binary from 88plug GitHub Releases.
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/install/get-installer.sh | sh
+# Pin:
+#   VERSION=v1.21.2-plus sh get-installer.sh
+#
+# Stock upstream installer (no plus images):
+#   curl -fsSL https://raw.githubusercontent.com/fosrl/installer/main/get-installer.sh | bash
 
 set -e
 
-# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# GitHub repository info
-REPO="fosrl/pangolin"
+REPO="${REPO:-88plug/pangolin-plus}"
 GITHUB_API_URL="https://api.github.com/repos/${REPO}/releases/latest"
 
-# Function to print colored output
-print_status() {
-    echo -e "${GREEN}[INFO]${NC} $1"
+print_status() { echo -e "${GREEN}[INFO]${NC} $1"; }
+print_warning() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+print_error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
+
+http_get() {
+	local url="$1" out="$2"
+	if command -v curl >/dev/null 2>&1; then
+		curl -fsSL "$url" -o "$out"
+	elif command -v wget >/dev/null 2>&1; then
+		wget -qO "$out" "$url"
+	else
+		print_error "Need curl or wget"
+		exit 1
+	fi
 }
 
-print_warning() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
+# Resolve release tag: VERSION env (with or without v) or latest from API.
+resolve_tag() {
+	local pin="${VERSION:-}"
+	if [ -n "$pin" ]; then
+		for try in "$pin" "v${pin#v}" "${pin#v}"; do
+			code=$(curl -fsSL -o /dev/null -w "%{http_code}" "https://github.com/${REPO}/releases/tag/${try}" 2>/dev/null || echo "000")
+			if [ "$code" = "200" ]; then
+				echo "$try"
+				return 0
+			fi
+		done
+		# Prefer v-prefixed plus tags even if HEAD fails offline
+		case "$pin" in
+			v*) echo "$pin" ;;
+			*) echo "v${pin}" ;;
+		esac
+		return 0
+	fi
+	local latest_info tmp
+	tmp=$(mktemp)
+	if ! http_get "$GITHUB_API_URL" "$tmp" 2>/dev/null; then
+		rm -f "$tmp"
+		print_error "Failed to fetch latest release from ${REPO}"
+		print_error "Build from monorepo: cd install && make go-build-release && ./bin/installer_linux_\$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
+		exit 1
+	fi
+	local version
+	version=$(grep '"tag_name"' "$tmp" | head -1 | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
+	rm -f "$tmp"
+	if [ -z "$version" ]; then
+		print_error "Could not parse tag_name from GitHub API"
+		exit 1
+	fi
+	echo "$version"
 }
 
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-# Function to get latest version from GitHub API
-get_latest_version() {
-    local latest_info
-    
-    if command -v curl >/dev/null 2>&1; then
-        latest_info=$(curl -fsSL "$GITHUB_API_URL" 2>/dev/null)
-    elif command -v wget >/dev/null 2>&1; then
-        latest_info=$(wget -qO- "$GITHUB_API_URL" 2>/dev/null)
-    else
-        print_error "Neither curl nor wget is available. Please install one of them." >&2
-        exit 1
-    fi
-    
-    if [ -z "$latest_info" ]; then
-        print_error "Failed to fetch latest version information" >&2
-        exit 1
-    fi
-    
-    # Extract version from JSON response (works without jq)
-    local version=$(echo "$latest_info" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')
-    
-    if [ -z "$version" ]; then
-        print_error "Could not parse version from GitHub API response" >&2
-        exit 1
-    fi
-    
-    # Remove 'v' prefix if present
-    version=$(echo "$version" | sed 's/^v//')
-    
-    echo "$version"
-}
-
-# Detect OS and architecture
 detect_platform() {
-    local os arch
-    
-    # Detect OS - only support Linux
-    case "$(uname -s)" in
-        Linux*)     os="linux" ;;
-        *)
-            print_error "Unsupported operating system: $(uname -s). Only Linux is supported."
-            exit 1
-            ;;
-    esac
-    
-    # Detect architecture - only support amd64 and arm64
-    case "$(uname -m)" in
-        x86_64|amd64)   arch="amd64" ;;
-        arm64|aarch64)  arch="arm64" ;;
-        *)
-            print_error "Unsupported architecture: $(uname -m). Only amd64 and arm64 are supported on Linux."
-            exit 1
-            ;;
-    esac
-    
-    echo "${os}_${arch}"
+	local os arch
+	case "$(uname -s)" in
+		Linux*) os="linux" ;;
+		*)
+			print_error "Unsupported OS: $(uname -s). Only Linux is supported."
+			exit 1
+			;;
+	esac
+	case "$(uname -m)" in
+		x86_64|amd64) arch="amd64" ;;
+		arm64|aarch64) arch="arm64" ;;
+		*)
+			print_error "Unsupported arch: $(uname -m). Only amd64 and arm64."
+			exit 1
+			;;
+	esac
+	echo "${os}_${arch}"
 }
 
-# Get installation directory
-get_install_dir() {
-    # Install to the current directory 
-    local install_dir="$(pwd)"
-    if [ ! -d "$install_dir" ]; then
-        print_error "Installation directory does not exist: $install_dir"
-        exit 1
-    fi
-    echo "$install_dir"
-}
-
-# Download and install installer
-install_installer() {
-    local platform="$1"
-    local install_dir="$2"
-    local binary_name="installer_${platform}"
-    
-    local download_url="${BASE_URL}/${binary_name}"
-    local temp_file="/tmp/installer"
-    local final_path="${install_dir}/installer"
-    
-    print_status "Downloading installer from ${download_url}"
-    
-    # Download the binary
-    if command -v curl >/dev/null 2>&1; then
-        curl -fsSL "$download_url" -o "$temp_file"
-    elif command -v wget >/dev/null 2>&1; then
-        wget -q "$download_url" -O "$temp_file"
-    else
-        print_error "Neither curl nor wget is available. Please install one of them."
-        exit 1
-    fi
-    
-    # Create install directory if it doesn't exist
-    mkdir -p "$install_dir"
-    
-    # Move binary to install directory
-    mv "$temp_file" "$final_path"
-    
-    # Make executable
-    chmod +x "$final_path"
-    
-    print_status "Installer downloaded to ${final_path}"
-}
-
-# Verify installation
-verify_installation() {
-    local install_dir="$1"
-    local installer_path="${install_dir}/installer"
-    
-    if [ -f "$installer_path" ] && [ -x "$installer_path" ]; then
-        print_status "Installation successful!"
-        return 0
-    else
-        print_error "Installation failed. Binary not found or not executable."
-        return 1
-    fi
-}
-
-# Main installation process
 main() {
-    print_status "Installing latest version of installer..."
-    
-    # Get latest version
-    print_status "Fetching latest version from GitHub..."
-    VERSION=$(get_latest_version)
-    print_status "Latest version: v${VERSION}"
-    
-    # Set base URL with the fetched version
-    BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
-    
-    # Detect platform
-    PLATFORM=$(detect_platform)
-    print_status "Detected platform: ${PLATFORM}"
-    
-    # Get install directory
-    INSTALL_DIR=$(get_install_dir)
-    print_status "Install directory: ${INSTALL_DIR}"
-    
-    # Install installer
-    install_installer "$PLATFORM" "$INSTALL_DIR"
-    
-    # Verify installation
-    if verify_installation "$INSTALL_DIR"; then
-        print_status "Installer is ready to use!"
-    else
-        exit 1
-    fi
+	print_status "Installing pangolin-plus installer from ${REPO}..."
+	TAG=$(resolve_tag)
+	print_status "Release tag: ${TAG}"
+	PLATFORM=$(detect_platform)
+	print_status "Platform: ${PLATFORM}"
+
+	local binary_name="installer_${PLATFORM}"
+	local download_url="https://github.com/${REPO}/releases/download/${TAG}/${binary_name}"
+	local install_dir
+	install_dir="$(pwd)"
+	local final_path="${install_dir}/installer"
+	local temp_file
+	temp_file=$(mktemp)
+
+	print_status "Downloading ${download_url}"
+	if ! http_get "$download_url" "$temp_file"; then
+		rm -f "$temp_file"
+		print_error "Download failed. Is installer_${PLATFORM} on release ${TAG}?"
+		print_error "From monorepo: cd install && make go-build-release && cp bin/installer_${PLATFORM} ./installer"
+		exit 1
+	fi
+	mv "$temp_file" "$final_path"
+	chmod +x "$final_path"
+	print_status "Installer ready: ${final_path}"
+	print_status "Run: ./installer   # writes compose with ghcr.io/88plug/pangolin-plus/* images"
 }
 
-# Run main function
 main "$@"

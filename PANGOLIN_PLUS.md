@@ -86,7 +86,7 @@ So pangolin-plus is:
 - Ansible **`deploy/pangolin.yml`** defaults: plus **local** tags (`pangolin-plus/*:local`, `pull_images: false`) + monorepo badger localPlugins; set GHCR (`image_registry=ghcr.io/88plug/pangolin-plus`, `image_tag=v1.21.2-plus`, `pull_images=true`) or fosrl via overrides
 - Ansible **`deploy/upgrade-pangolin.yml`** defaults: **published GHCR plus** (`ghcr.io/88plug/pangolin-plus/{pangolin,gerbil}:v1.21.2-plus`, `pull_images: true`); demote guard keeps plus→stock from silent fallback
 - Traefik pin: **v3.7** (compose + deploy + installer)
-- **Installer (`install/`) remains stock** fosrl images + catalog badger — use compose.plus / deploy / GHCR for plus
+- **Installer (`install/`)** writes compose with **`ghcr.io/88plug/pangolin-plus/{pangolin,gerbil}`** (same product tags as Releases). Catalog Badger version pin remains for Traefik plugins API; monorepo real-IP badger is via compose.plus / Ansible localPlugins. Download: `install/get-installer.sh` → `installer_*` on plus Releases.
 
 ---
 

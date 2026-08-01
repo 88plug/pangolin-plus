@@ -372,8 +372,11 @@ jobs:
           test -f ./dist/plus/SHA256SUMS
           ( cd dist/plus && sha256sum -c SHA256SUMS >/dev/null )
           count=$(find dist/plus -type f ! -name SHA256SUMS | wc -l)
-          echo "asset count=$count (expect 20)"
-          test "$count" -eq 20
+          # newt×10 + olm×8 + gerbil×2 + installer×2 = 22
+          echo "asset count=$count (expect 22)"
+          test "$count" -eq 22
+          test -x dist/plus/installer_linux_amd64
+          test -x dist/plus/installer_linux_arm64
 
       - name: List dist/plus
         run: ls -la dist/plus/
@@ -464,6 +467,17 @@ jobs:
 
           ${LATEST_NOTE}
 
+          ### Interactive installer
+
+          Writes docker-compose using **GHCR plus** images (\`ghcr.io/88plug/pangolin-plus/*\`).
+
+          \`\`\`bash
+          curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/install/get-installer.sh | VERSION=${TAG} sh
+          ./installer
+          \`\`\`
+
+          Assets: \`installer_linux_amd64\`, \`installer_linux_arm64\`.
+
           ### Client binaries
 
           Assets use upstream naming (\`newt_linux_amd64\`, \`olm_darwin_arm64\`, …).
@@ -474,6 +488,7 @@ jobs:
           | newt | Site connector | \`newt_linux_amd64\` |
           | olm | End-user client | \`olm_linux_amd64\` (no FreeBSD assets) |
           | gerbil | WG edge (controller) | \`gerbil_linux_amd64\` — **container-first**; binary optional |
+          | installer | VPS interactive setup | \`installer_linux_amd64\` |
 
           \`\`\`bash
           curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/scripts/get-plus-newt.sh | sh

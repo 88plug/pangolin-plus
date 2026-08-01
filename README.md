@@ -17,7 +17,20 @@ One monorepo. One product. We take [fosrl/pangolin](https://github.com/fosrl/pan
 
 ## Install (users)
 
-### 1. Controller + edge (Docker)
+Everything below pulls **pangolin-plus** (GHCR + this repo’s Releases). Stock `fosrl/*` is not the product path.
+
+### 1. Interactive installer (VPS)
+
+```bash
+# Downloads installer_* from 88plug/pangolin-plus releases; compose uses GHCR plus images
+curl -fsSL https://raw.githubusercontent.com/88plug/pangolin-plus/main/install/get-installer.sh \
+  | VERSION=v1.21.2-plus sh
+./installer
+```
+
+Or from a clone: `cd install && make go-build-release && ./bin/installer_linux_amd64`.
+
+### 2. Controller + edge (Docker Compose)
 
 ```bash
 export TAG=v1.21.2-plus
@@ -31,7 +44,7 @@ docker compose -f compose.plus.yaml pull
 docker compose -f compose.plus.yaml up -d --no-build
 ```
 
-### 2. Site client (newt) and user client (olm)
+### 3. Site client (newt) and user client (olm)
 
 ```bash
 # Checksum-verified from GitHub Releases (VERSION with or without leading v)
@@ -46,7 +59,7 @@ newt --version   # → Newt version 1.21.2-plus
 
 Gerbil usually runs as the edge **container** above. Optional host binary: `scripts/get-plus-gerbil.sh` (linux only).
 
-### 3. Or Ansible on a VPS
+### 4. Ansible on a VPS
 
 ```bash
 cd deploy
@@ -64,7 +77,7 @@ Details: [deploy/README.md](deploy/README.md).
 
 | You run | You get |
 |---------|---------|
-| **GHCR / get-plus / this monorepo** | Full **plus** stack — mined client + plugin + server fixes |
+| **GHCR / get-plus / installer / compose.plus / deploy** | Full **plus** stack — mined client + plugin + server fixes |
 | Stock `fosrl/*` or pangolin.net downloads | Protocol-compatible, **without** plus deltas |
 
 Plus clients and the controller talk the same WireGuard/control protocol as upstream. The difference is the **code inside** the binaries and images.
@@ -137,6 +150,7 @@ pangolin-plus/
   components/badger   Traefik plugin (mined)
   compose.plus.yaml   Lab / published-image compose
   deploy/             Ansible
+  install/            Interactive installer (GHCR plus images)
   scripts/get-plus-*  Client installers
 ```
 
